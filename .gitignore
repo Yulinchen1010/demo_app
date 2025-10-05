@@ -43,3 +43,32 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# === Flutter build outputs ===
+/android/app/build/
+ios/Pods/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.dart_tool/
+.pub-cache/
+.pub/
+
+# === Editor & IDE folders ===
+.idea/
+.vscode/
+
+# === Binary artifacts ===
+*.apk
+*.aab
+*.bin
+*.so
+*.jar
+*.zip
+*.exe
+*.dll
+
+# === Misc build cache ===
+**/intermediates/
+**/outputs/
