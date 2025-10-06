@@ -1,6 +1,8 @@
 
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -31,15 +33,50 @@ class Series {
   Series(this.spots);
 
   /// Constructs a [Series] from a JSON array of pairs.
-  factory Series.fromJson(List data) {
-    return Series(
-      data
-          .map<FlSpot>((e) => FlSpot(
-                (e[0] as num).toDouble(),
-                (e[1] as num).toDouble(),
-              ))
-          .toList(),
-    );
+  factory Series.fromJson(dynamic data) {
+    final iterable = _coerceIterable(data);
+    final spots = <FlSpot>[];
+
+    for (final entry in iterable) {
+      final spot = _spotFromEntry(entry);
+      if (spot != null) {
+        spots.add(spot);
+      }
+    }
+
+    return Series(spots);
+  }
+
+  static Iterable _coerceIterable(dynamic data) {
+    if (data is Iterable) return data;
+    if (data is String && data.trim().isNotEmpty) {
+      final decoded = jsonDecode(data);
+      if (decoded is Iterable) return decoded;
+    }
+    throw StateError('Series expects an iterable but received ${data.runtimeType}');
+  }
+
+  static FlSpot? _spotFromEntry(dynamic entry) {
+    double? x;
+    double? y;
+
+    if (entry is List && entry.length >= 2) {
+      x = _toDouble(entry[0]);
+      y = _toDouble(entry[1]);
+    } else if (entry is Map) {
+      final map = entry.map((key, value) => MapEntry(key.toString(), value));
+      x = _toDouble(map['x'] ?? map['timestamp'] ?? map['time'] ?? map['t']);
+      y = _toDouble(map['y'] ?? map['value'] ?? map['emg_rms'] ?? map['rms']);
+    }
+
+    if (x == null || y == null) return null;
+    return FlSpot(x, y);
+  }
+
+  static double? _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 }
 
@@ -48,8 +85,42 @@ class HistoryItem {
   final String id;
   final DateTime date;
   HistoryItem({required this.id, required this.date});
-  factory HistoryItem.fromJson(Map<String, dynamic> j) =>
-      HistoryItem(id: j['id'], date: DateTime.parse(j['date']));
+  factory HistoryItem.fromJson(dynamic json) {
+    if (json is Map) {
+      final map = json.map((key, value) => MapEntry(key.toString(), value));
+      final id = (map['id'] ?? map['uuid'] ?? map['history_id'] ?? '').toString();
+      final rawDate = map['date'] ?? map['created_at'] ?? map['timestamp'];
+      final date = _parseDate(rawDate);
+      if (id.isEmpty || date == null) {
+        throw StateError('無法解析歷史紀錄：$map');
+      }
+      return HistoryItem(id: id, date: date);
+    }
+
+    if (json is List && json.length >= 2) {
+      final id = json[0].toString();
+      final date = _parseDate(json[1]);
+      if (date == null) {
+        throw StateError('無法解析歷史紀錄：$json');
+      }
+      return HistoryItem(id: id, date: date);
+    }
+
+    throw StateError('Unsupported history item format: ${json.runtimeType}');
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value is DateTime) return value;
+    if (value is num) {
+      // Assume seconds if value is reasonably small, otherwise milliseconds.
+      final millis = value > 1e12 ? value.toInt() : (value * 1000).toInt();
+      return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toLocal();
+    }
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value);
+    }
+    return null;
+  }
 }
 
 /// Encapsulates calls to the cloud API.
@@ -57,15 +128,17 @@ class CloudApi {
   /// Fetches the latest prediction series.
   static Future<Series> fetchLatest() async {
     final res = await _dio.get('/predict/latest');
-    return Series.fromJson(res.data['series']);
+    final data = _normalizeResponse(res);
+    final series = _extractList(data, 'latest series', ['series', 'data', 'points']);
+    return Series.fromJson(series);
   }
 
   /// Fetches a list of historic prediction items ordered by most recent.
   static Future<List<HistoryItem>> fetchHistoryIndex() async {
     final res = await _dio.get('/predict/history');
-    final list = (res.data as List)
-        .map((e) => HistoryItem.fromJson(e))
-        .toList()
+    final data = _normalizeResponse(res);
+    final rawList = _extractList(data, 'history index', ['data', 'items', 'history']);
+    final list = rawList.map((e) => HistoryItem.fromJson(e)).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
     return list;
   }
@@ -73,7 +146,45 @@ class CloudApi {
   /// Fetches a historic prediction series by ID.
   static Future<Series> fetchHistoryById(String id) async {
     final res = await _dio.get('/predict/history/$id');
-    return Series.fromJson(res.data['series']);
+    final data = _normalizeResponse(res);
+    final series = _extractList(data, 'history detail', ['series', 'data', 'points']);
+    return Series.fromJson(series);
+  }
+
+  static dynamic _normalizeResponse(Response res) {
+    final data = res.data;
+    if (data is String) {
+      final trimmed = data.trim();
+      if (trimmed.isEmpty) return [];
+      try {
+        return jsonDecode(trimmed);
+      } catch (_) {
+        return data;
+      }
+    }
+    return data;
+  }
+
+  static List<dynamic> _extractList(
+    dynamic data,
+    String context,
+    List<String> candidateKeys,
+  ) {
+    if (data is List) {
+      return data;
+    }
+
+    if (data is Map) {
+      final map = data.map((key, value) => MapEntry(key.toString(), value));
+      for (final key in candidateKeys) {
+        final value = map[key];
+        if (value is List) {
+          return value;
+        }
+      }
+    }
+
+    throw StateError('Unexpected $context response shape: ${data.runtimeType}');
   }
 }
 
@@ -99,12 +210,8 @@ class BleIngestService {
   /// discovers the notify characteristic. Throws if no device is found.
   Future<void> connect(String deviceName) async {
     // 1. Request permissions on Android. If denied, bail out.
-    final statuses = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-    ].request();
-    if (statuses.values.any((s) => s.isDenied || s.isPermanentlyDenied)) {
+    final granted = await _ensurePermissions();
+    if (!granted) {
       throw Exception('藍牙/定位權限未允許');
     }
 
@@ -178,6 +285,32 @@ class BleIngestService {
         // ignore disconnect exceptions
       }
     }
+  }
+
+  Future<bool> _ensurePermissions() async {
+    if (!Platform.isAndroid) {
+      return true;
+    }
+
+    final scanStatus = await Permission.bluetoothScan.request();
+    final connectStatus = await Permission.bluetoothConnect.request();
+
+    if (scanStatus.isGranted && connectStatus.isGranted) {
+      return true;
+    }
+
+    final locationStatuses = await [
+      Permission.locationWhenInUse,
+      Permission.location,
+    ].request();
+
+    if (locationStatuses.values.any((s) => !s.isGranted)) {
+      return false;
+    }
+
+    final retryScan = await Permission.bluetoothScan.request();
+    final retryConnect = await Permission.bluetoothConnect.request();
+    return retryScan.isGranted && retryConnect.isGranted;
   }
 }
 
