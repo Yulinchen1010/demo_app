@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -188,6 +189,170 @@ class CloudApi {
 
     throw StateError('Unexpected $context response shape: ${data.runtimeType}');
   }
+}
+
+/// Simple 3D vector implementation providing the handful of operations needed
+/// for IMU orientation math without pulling an external dependency.
+class Vector3 {
+  double x;
+  double y;
+  double z;
+
+  Vector3(this.x, this.y, this.z);
+
+  Vector3 clone() => Vector3(x, y, z);
+
+  double get lengthSquared => x * x + y * y + z * z;
+
+  double get length2 => lengthSquared;
+
+  double get length => math.sqrt(lengthSquared);
+
+  void scale(double scalar) {
+    x *= scalar;
+    y *= scalar;
+    z *= scalar;
+  }
+
+  void normalize() {
+    final len = length;
+    if (len < 1e-9) {
+      x = 0;
+      y = 0;
+      z = 0;
+      return;
+    }
+    scale(1 / len);
+  }
+
+  double dot(Vector3 other) => x * other.x + y * other.y + z * other.z;
+
+  Vector3 cross(Vector3 other) => Vector3(
+        y * other.z - z * other.y,
+        z * other.x - x * other.z,
+        x * other.y - y * other.x,
+      );
+}
+
+class Quaternion {
+  double w;
+  double x;
+  double y;
+  double z;
+
+  Quaternion(this.w, this.x, this.y, this.z);
+
+  factory Quaternion.identity() => Quaternion(1, 0, 0, 0);
+
+  factory Quaternion.axisAngle(Vector3 axis, double angle) {
+    final normalizedAxis = axis.clone();
+    final axisLength = normalizedAxis.length;
+    if (axisLength < 1e-9) {
+      return Quaternion.identity();
+    }
+    normalizedAxis.scale(1 / axisLength);
+    final half = angle / 2;
+    final sinHalf = math.sin(half);
+    final q = Quaternion(
+      math.cos(half),
+      normalizedAxis.x * sinHalf,
+      normalizedAxis.y * sinHalf,
+      normalizedAxis.z * sinHalf,
+    );
+    q.normalize();
+    return q;
+  }
+
+  Quaternion copy() => Quaternion(w, x, y, z);
+
+  void normalize() {
+    final magnitude = math.sqrt(w * w + x * x + y * y + z * z);
+    if (magnitude < 1e-9) {
+      w = 1;
+      x = y = z = 0;
+      return;
+    }
+    final inv = 1 / magnitude;
+    w *= inv;
+    x *= inv;
+    y *= inv;
+    z *= inv;
+  }
+
+  void conjugate() {
+    x = -x;
+    y = -y;
+    z = -z;
+  }
+
+  void multiply(Quaternion other) {
+    final nw = w * other.w - x * other.x - y * other.y - z * other.z;
+    final nx = w * other.x + x * other.w + y * other.z - z * other.y;
+    final ny = w * other.y - x * other.z + y * other.w + z * other.x;
+    final nz = w * other.z + x * other.y - y * other.x + z * other.w;
+    w = nw;
+    x = nx;
+    y = ny;
+    z = nz;
+  }
+}
+
+/// Represents the raw IMU reading for a single sensor, including derived
+/// orientation expressed as a quaternion relative to the gravity vector.
+class ImuReading {
+  final Vector3 accel;
+  final Vector3 gyro;
+  final Quaternion orientation;
+
+  ImuReading._(this.accel, this.gyro, this.orientation);
+
+  /// Builds an [ImuReading] from six sequential values:
+  /// `[ax, ay, az, gx, gy, gz]`.
+  factory ImuReading.fromValues(List<double> values) {
+    final accel = Vector3(values[0], values[1], values[2]);
+    final gyro = Vector3(values[3], values[4], values[5]);
+    final orientation = _orientationFromAcceleration(accel);
+    return ImuReading._(accel, gyro, orientation);
+  }
+
+  static Quaternion _orientationFromAcceleration(Vector3 accel) {
+    final norm = accel.clone();
+    final magnitude = norm.length;
+    if (magnitude < 1e-6) {
+      return Quaternion.identity();
+    }
+    norm.scale(1 / magnitude);
+    final reference = Vector3(0, 0, -1);
+    final dot = math.max(-1.0, math.min(1.0, reference.dot(norm)));
+    final axis = reference.cross(norm);
+    if (axis.length2 < 1e-12) {
+      if (dot >= 0) {
+        return Quaternion.identity();
+      }
+      // Opposite direction: rotate 180° around an arbitrary axis orthogonal to
+      // gravity. X-axis keeps things simple.
+      final fallback = Vector3(1, 0, 0);
+      return Quaternion.axisAngle(fallback, math.pi);
+    }
+    axis.normalize();
+    final angle = math.acos(dot);
+    final q = Quaternion.axisAngle(axis, angle);
+    q.normalize();
+    return q;
+  }
+}
+
+/// Container for the calculated joint angle of a sensor pair.
+class JointAngleMeasurement {
+  final String label;
+  final double? vectorDegrees;
+  final double? quaternionDegrees;
+
+  const JointAngleMeasurement({
+    required this.label,
+    required this.vectorDegrees,
+    required this.quaternionDegrees,
+  });
 }
 
 /// Service that handles Bluetooth Low Energy (BLE) ingestion from an ESP32 device.
@@ -511,6 +676,7 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
   String? _error;
   double? _startTimestamp;
   double? _latestPct;
+  List<JointAngleMeasurement>? _latestJointAngles;
 
   @override
   void initState() {
@@ -527,6 +693,7 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
       _lastX = 0;
       _startTimestamp = null;
       _latestPct = null;
+      _latestJointAngles = null;
     });
     try {
       await esp32.connect(BleIngestService.kDeviceName);
@@ -574,6 +741,8 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
     final rawTs = double.tryParse(parts[0]);
     final emgRms = double.tryParse(parts[1]) ?? 0.0;
     final pct = parts.length >= 3 ? double.tryParse(parts[2]) : null;
+    final imuReadings = _parseImuReadings(parts);
+    final jointAngles = _calculateJointAngles(imuReadings);
 
     setState(() {
       double x;
@@ -586,12 +755,103 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
       _spots.add(FlSpot(x, emgRms));
       _lastX = x;
       _latestPct = pct;
+      _latestJointAngles = jointAngles;
       if (_spots.length > 500) {
         _spots.removeAt(0);
       }
     });
 
     _uploadToCloud(rawTs, emgRms, pct);
+  }
+
+  List<ImuReading> _parseImuReadings(List<String> parts) {
+    if (parts.length <= 3) {
+      return const <ImuReading>[];
+    }
+    final values = <double>[];
+    for (var i = 3; i < parts.length; i++) {
+      final value = double.tryParse(parts[i].trim());
+      if (value != null) {
+        values.add(value);
+      }
+    }
+    final readings = <ImuReading>[];
+    for (var i = 0; i + 6 <= values.length && readings.length < 6; i += 6) {
+      readings.add(ImuReading.fromValues(values.sublist(i, i + 6)));
+    }
+    return readings;
+  }
+
+  List<JointAngleMeasurement>? _calculateJointAngles(
+      List<ImuReading> readings) {
+    if (readings.length < 2) {
+      return null;
+    }
+    const labels = [
+      '軀幹（後頸 vs 下背）',
+      '左肩（上臂 vs 肩胛）',
+      '右肩（上臂 vs 肩胛）',
+    ];
+    const pairs = [
+      (0, 1),
+      (2, 3),
+      (4, 5),
+    ];
+    final results = <JointAngleMeasurement>[];
+    for (var i = 0; i < pairs.length; i++) {
+      final (a, b) = pairs[i];
+      double? vectorDeg;
+      double? quaternionDeg;
+      if (readings.length > a && readings.length > b) {
+        final vectorRad =
+            _angleBetweenVectors(readings[a].accel, readings[b].accel);
+        final quaternionRad = _angleFromQuaternions(
+            readings[a].orientation, readings[b].orientation);
+        if (vectorRad != null) {
+          vectorDeg = vectorRad * 180 / math.pi;
+        }
+        if (quaternionRad != null) {
+          quaternionDeg = quaternionRad * 180 / math.pi;
+        }
+      }
+      results.add(JointAngleMeasurement(
+        label: labels[i],
+        vectorDegrees: vectorDeg,
+        quaternionDegrees: quaternionDeg,
+      ));
+    }
+    return results;
+  }
+
+  double? _angleBetweenVectors(Vector3 a, Vector3 b) {
+    final va = a.clone();
+    final vb = b.clone();
+    final lenA = va.length;
+    final lenB = vb.length;
+    if (lenA < 1e-6 || lenB < 1e-6) {
+      return null;
+    }
+    va.scale(1 / lenA);
+    vb.scale(1 / lenB);
+    final dot = math.max(-1.0, math.min(1.0, va.dot(vb)));
+    return math.acos(dot);
+  }
+
+  double? _angleFromQuaternions(Quaternion a, Quaternion b) {
+    final qa = a.copy()..normalize();
+    final qb = b.copy()..normalize();
+    qa.conjugate();
+    qa.multiply(qb);
+    qa.normalize();
+    final w = math.max(-1.0, math.min(1.0, qa.w));
+    return 2 * math.acos(w);
+  }
+
+  String _formatAngle(double? value) {
+    if (value == null || value.isNaN || value.isInfinite) {
+      return '--';
+    }
+    return value.toStringAsFixed(1);
   }
 
   Future<void> _uploadToCloud(
@@ -660,6 +920,32 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
             child:
                 RegressionChart(series: Series(_spots), title: '即時 EMG RMS'),
           ),
+          if (_latestJointAngles != null && _latestJointAngles!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '最新關節角度',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._latestJointAngles!.map(
+                    (m) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        '${m.label}：向量=${_formatAngle(m.vectorDegrees)}°，四元數=${_formatAngle(m.quaternionDegrees)}°',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
