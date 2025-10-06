@@ -46,3 +46,25 @@ If you want to collaborate through GitHub, the typical workflow looks like this:
 
 Repeat the cycle for each bug fix or new feature so the `main` branch stays
 stable and reviewable.
+
+## ESP32 Sensor Integration
+
+The Flutter app is designed to read the packets emitted by the provided
+ESP32 firmware. To verify the end-to-end flow:
+
+1. **Flash the firmware** shown above to your ESP32 and keep `SIM_MODE` at `0`
+   for real sensor data (or switch to `1` for synthetic signals).
+2. **Pair the device** with your Android phone/tablet. It advertises the name
+   `ESP32_EMG_IMU` over classic Bluetooth (SPP).
+3. **Grant Bluetooth permissions** when Android prompts you. On Android 12+
+   the app requests `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT`; older versions
+   fall back to the legacy Bluetooth/location permissions.
+4. **Launch the app** and open the “即時” tab. After a successful connection
+   the UI will display the latest EMG RMS value and plot the rolling chart.
+5. Each packet follows the format
+   `timestamp_ms,emg_rms,emg_%` followed by the averaged IMU axes for six
+   sensors. The app consumes the timestamp/RMS/% fields, retains the newest
+   500 samples, and uploads them to the cloud API.
+
+If the connection drops, the screen will show an error message with a button to
+retry. Ensure the ESP32 stays powered and within Bluetooth range during tests.
