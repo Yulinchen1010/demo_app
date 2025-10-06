@@ -3,11 +3,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart'
+    as classic;
 import 'package:permission_handler/permission_handler.dart';
 
 /// Base URL for your cloud API. Replace with your own endpoint.
@@ -193,98 +195,128 @@ class CloudApi {
 /// The service exposes separate [connect] and [listen] methods so you can
 /// control when the connection is established and when data is consumed.
 class BleIngestService {
-  BluetoothDevice? _dev;
-  BluetoothCharacteristic? _notify;
-  StreamSubscription<List<int>>? _sub;
+  static const String kDeviceName = 'ESP32_EMG_IMU';
 
-  /// Name of the target ESP32 device in advertisement packets.
-  static const String kDeviceName = 'ESP32_SIM_EMG_IMU';
-  /// UUID of the BLE service to look for on the device.
-  static final Guid kServiceUuid = Guid('0000abcd-0000-1000-8000-00805f9b34fb');
-  /// UUID of the characteristic to subscribe to for notifications.
-  static final Guid kNotifyUuid = Guid('0000dcba-0000-1000-8000-00805f9b34fb');
+  final classic.FlutterBluetoothSerial _bluetooth =
+      classic.FlutterBluetoothSerial.instance;
+  classic.BluetoothConnection? _connection;
+  StreamSubscription<Uint8List>? _subscription;
 
-  /// Connects to a BLE device whose advertised name matches [deviceName] or
-  /// whose advertised service UUID matches [kServiceUuid]. This method
-  /// requests the necessary permissions, scans for a matching device, and
-  /// discovers the notify characteristic. Throws if no device is found.
+  /// Connects to the ESP32 over classic Bluetooth (SPP).
   Future<void> connect(String deviceName) async {
-    // 1. Request permissions on Android. If denied, bail out.
+    await dispose();
+
     final granted = await _ensurePermissions();
     if (!granted) {
       throw Exception('藍牙/定位權限未允許');
     }
 
-    // 2. Start scanning for up to 8 seconds using the static API.
-    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 8));
-    ScanResult? hit;
-    final subScan = FlutterBluePlus.scanResults.listen((results) {
-      for (final r in results) {
-        final name = r.device.platformName;
-        final svcs = r.advertisementData.serviceUuids;
-        if (name == deviceName || svcs.contains(kServiceUuid)) {
-          hit = r;
-          break;
-        }
+    final isEnabled = await _bluetooth.isEnabled ?? false;
+    if (!isEnabled) {
+      final enabled = await _bluetooth.requestEnable();
+      if (enabled != true) {
+        throw Exception('請先開啟藍牙功能');
       }
-    });
-
-    final start = DateTime.now();
-    while (hit == null && DateTime.now().difference(start).inSeconds < 8) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
-    await subScan.cancel();
-    await FlutterBluePlus.stopScan();
 
-    if (hit == null) {
+    try {
+      await _bluetooth.cancelDiscovery();
+    } catch (_) {
+      // Ignore discovery cancellation issues when Bluetooth is off.
+    }
+    final device = await _findDevice(deviceName);
+    if (device == null) {
       throw Exception('找不到目標裝置：$deviceName');
     }
 
-    // 3. Connect to the discovered device.
-    _dev = hit!.device;
-    await _dev!.connect(timeout: const Duration(seconds: 10));
-
-    // 4. Discover services and locate the notify characteristic.
-    final services = await _dev!.discoverServices();
-    final svc = services.firstWhere((s) => s.uuid == kServiceUuid,
-        orElse: () =>
-            throw Exception('找不到服務 $kServiceUuid on device ${_dev!.platformName}'));
-    _notify = svc.characteristics.firstWhere((c) => c.uuid == kNotifyUuid,
-        orElse: () => throw Exception('找不到特徵 $kNotifyUuid'));
+    try {
+      _connection = await classic.BluetoothConnection.toAddress(device.address)
+          .timeout(const Duration(seconds: 12));
+    } on TimeoutException catch (_) {
+      throw Exception('連線逾時，請確認裝置已開機且可被配對');
+    }
   }
 
-  /// Begins listening for newline-delimited strings from the device. Each
-  /// complete line is delivered to [onLine]. Call only after [connect].
-  void listen(void Function(String line) onLine) {
-    if (_notify == null) {
-      throw StateError('尚未連線或找不到通知特徵');
+  /// Begins listening for newline-delimited packets emitted by the ESP32.
+  void listen(
+    void Function(String line) onLine, {
+    void Function(Object error)? onError,
+    void Function()? onDone,
+  }) {
+    final conn = _connection;
+    if (conn == null || !conn.isConnected) {
+      throw StateError('尚未建立藍牙連線');
     }
-    _notify!.setNotifyValue(true);
+
+    final input = conn.input;
+    if (input == null) {
+      throw StateError('此裝置沒有可讀取的資料串流');
+    }
+
     final buffer = StringBuffer();
-    _sub = _notify!.lastValueStream.listen((bytes) {
-      buffer.write(String.fromCharCodes(bytes));
-      while (true) {
-        final text = buffer.toString();
-        final i = text.indexOf('\n');
-        if (i < 0) break;
-        final line = text.substring(0, i).trim();
-        if (line.isNotEmpty) onLine(line);
-        buffer.clear();
-        if (i + 1 < text.length) buffer.write(text.substring(i + 1));
-      }
-    });
+    _subscription = input.listen(
+      (Uint8List data) {
+        buffer.write(utf8.decode(data));
+        while (true) {
+          final current = buffer.toString();
+          final idx = current.indexOf('\n');
+          if (idx < 0) break;
+          final line = current.substring(0, idx).trim();
+          if (line.isNotEmpty) {
+            onLine(line);
+          }
+          buffer
+            ..clear()
+            ..write(idx + 1 < current.length ? current.substring(idx + 1) : '');
+        }
+      },
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: false,
+    );
   }
 
-  /// Releases resources and disconnects from the BLE device.
+  /// Releases resources and disconnects from the ESP32.
   Future<void> dispose() async {
-    await _sub?.cancel();
-    if (_dev != null) {
+    await _subscription?.cancel();
+    _subscription = null;
+    if (_connection != null) {
       try {
-        await _dev!.disconnect();
+        await _connection!.close();
       } catch (_) {
-        // ignore disconnect exceptions
+        // Ignore errors during teardown.
       }
     }
+    _connection = null;
+    try {
+      await _bluetooth.cancelDiscovery();
+    } catch (_) {
+      // ignore discovery cancellation issues
+    }
+  }
+
+  Future<classic.BluetoothDevice?> _findDevice(String deviceName) async {
+    final bonded = await _bluetooth.getBondedDevices();
+    for (final device in bonded) {
+      if ((device.name ?? '').trim() == deviceName) {
+        return device;
+      }
+    }
+
+    classic.BluetoothDiscoveryResult? discoveryResult;
+    final stream = _bluetooth.startDiscovery();
+    try {
+      await for (final result in stream) {
+        final name = result.device.name ?? '';
+        if (name.trim() == deviceName) {
+          discoveryResult = result;
+          break;
+        }
+      }
+    } finally {
+      await _bluetooth.cancelDiscovery();
+    }
+    return discoveryResult?.device;
   }
 
   Future<bool> _ensurePermissions() async {
@@ -292,25 +324,47 @@ class BleIngestService {
       return true;
     }
 
-    final scanStatus = await Permission.bluetoothScan.request();
-    final connectStatus = await Permission.bluetoothConnect.request();
-
-    if (scanStatus.isGranted && connectStatus.isGranted) {
-      return true;
-    }
-
-    final locationStatuses = await [
+    final sdkInt = _androidSdkInt();
+    final requested = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.bluetooth,
       Permission.locationWhenInUse,
       Permission.location,
     ].request();
 
-    if (locationStatuses.values.any((s) => !s.isGranted)) {
-      return false;
+    if (sdkInt >= 31) {
+      bool scanGranted = requested[Permission.bluetoothScan]?.isGranted ?? false;
+      bool connectGranted =
+          requested[Permission.bluetoothConnect]?.isGranted ?? false;
+
+      if (!scanGranted) {
+        scanGranted = (await Permission.bluetoothScan.request()).isGranted;
+      }
+      if (!connectGranted) {
+        connectGranted =
+            (await Permission.bluetoothConnect.request()).isGranted;
+      }
+      return scanGranted && connectGranted;
     }
 
-    final retryScan = await Permission.bluetoothScan.request();
-    final retryConnect = await Permission.bluetoothConnect.request();
-    return retryScan.isGranted && retryConnect.isGranted;
+    // Android 30 以下：授與傳統藍牙或定位權限即可運作
+    if (requested[Permission.bluetooth]?.isGranted ?? false) {
+      return true;
+    }
+
+    final locationGranted =
+        (requested[Permission.locationWhenInUse]?.isGranted ?? false) ||
+            (requested[Permission.location]?.isGranted ?? false);
+    return locationGranted;
+  }
+
+  int _androidSdkInt() {
+    final match = RegExp(r'SDK\s*(\d+)').firstMatch(Platform.version);
+    if (match != null) {
+      return int.tryParse(match.group(1) ?? '') ?? 0;
+    }
+    return 0;
   }
 }
 
@@ -453,6 +507,10 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
   final List<FlSpot> _spots = [];
   double _lastX = 0;
   bool _connected = false;
+  bool _connecting = true;
+  String? _error;
+  double? _startTimestamp;
+  double? _latestPct;
 
   @override
   void initState() {
@@ -461,32 +519,91 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
   }
 
   Future<void> _connectAndListen() async {
+    setState(() {
+      _connecting = true;
+      _error = null;
+      _connected = false;
+      _spots.clear();
+      _lastX = 0;
+      _startTimestamp = null;
+      _latestPct = null;
+    });
     try {
-      await esp32.connect('ESP32_SIM_EMG_IMU');
-      setState(() => _connected = true);
-      esp32.listen((line) {
-        final parts = line.split(',');
-        if (parts.length >= 2) {
-          final ts = double.tryParse(parts[0]) ?? (_lastX + 1);
-          final emgRms = double.tryParse(parts[1]) ?? 0.0;
-          setState(() {
-            _spots.add(FlSpot(ts, emgRms));
-            _lastX = ts;
-            if (_spots.length > 500) _spots.removeAt(0);
-          });
-          _uploadToCloud(ts, emgRms);
-        }
+      await esp32.connect(BleIngestService.kDeviceName);
+      if (!mounted) return;
+      setState(() {
+        _connected = true;
+        _connecting = false;
       });
+      esp32.listen(
+        _handleIncomingLine,
+        onError: (error) {
+          if (!mounted) return;
+          setState(() {
+            _error = '資料串流錯誤：$error';
+            _connected = false;
+            _connecting = false;
+          });
+        },
+        onDone: () {
+          if (!mounted) return;
+          setState(() {
+            _error = '藍牙連線已中斷';
+            _connected = false;
+            _connecting = false;
+          });
+        },
+      );
     } catch (e) {
       debugPrint('❌ Bluetooth connect error: $e');
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _connecting = false;
+        _connected = false;
+      });
     }
   }
 
-  Future<void> _uploadToCloud(double ts, double emgRms) async {
+  void _handleIncomingLine(String line) {
+    final parts = line.split(',');
+    if (parts.length < 2 || !mounted) {
+      return;
+    }
+
+    final rawTs = double.tryParse(parts[0]);
+    final emgRms = double.tryParse(parts[1]) ?? 0.0;
+    final pct = parts.length >= 3 ? double.tryParse(parts[2]) : null;
+
+    setState(() {
+      double x;
+      if (rawTs != null) {
+        _startTimestamp ??= rawTs;
+        x = (rawTs - _startTimestamp!) / 1000.0;
+      } else {
+        x = _lastX + 1;
+      }
+      _spots.add(FlSpot(x, emgRms));
+      _lastX = x;
+      _latestPct = pct;
+      if (_spots.length > 500) {
+        _spots.removeAt(0);
+      }
+    });
+
+    _uploadToCloud(rawTs, emgRms, pct);
+  }
+
+  Future<void> _uploadToCloud(
+      double? rawTimestampMs, double emgRms, double? emgPct) async {
     try {
+      final ts = rawTimestampMs != null
+          ? rawTimestampMs.round()
+          : DateTime.now().millisecondsSinceEpoch;
       await _dio.post('/predict/upload', data: {
         'timestamp': ts,
         'emg_rms': emgRms,
+        if (emgPct != null) 'emg_pct': emgPct,
       });
     } catch (e) {
       debugPrint('❌ Upload error: $e');
@@ -495,12 +612,56 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_connected) {
+    if (_connecting) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('連線失敗：\n$_error'),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _connectAndListen,
+              child: const Text('重新嘗試'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_connected) {
+      return const Center(child: Text('尚未連線到裝置'));
     }
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: RegressionChart(series: Series(_spots), title: '即時 EMG RMS'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_spots.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Text('等待裝置資料中…'),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                '最新 EMG RMS：${_spots.last.y.toStringAsFixed(2)}' +
+                    (_latestPct != null
+                        ? ' (${_latestPct!.toStringAsFixed(1)}%)'
+                        : ''),
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          Expanded(
+            child:
+                RegressionChart(series: Series(_spots), title: '即時 EMG RMS'),
+          ),
+        ],
+      ),
     );
   }
 
