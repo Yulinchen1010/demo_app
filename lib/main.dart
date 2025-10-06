@@ -1,6 +1,7 @@
 
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -41,6 +42,237 @@ class Series {
           .toList(),
     );
   }
+}
+
+/// Simple 3D vector utility to work with IMU acceleration data.
+class Vector3 {
+  final double x;
+  final double y;
+  final double z;
+
+  const Vector3(this.x, this.y, this.z);
+
+  static const Vector3 zero = Vector3(0, 0, 0);
+
+  double get magnitude => math.sqrt(x * x + y * y + z * z);
+
+  bool get isValid => magnitude > 1e-9 && x.isFinite && y.isFinite && z.isFinite;
+
+  Vector3 normalized() {
+    final mag = magnitude;
+    if (mag < 1e-9 || !mag.isFinite) {
+      return zero;
+    }
+    return Vector3(x / mag, y / mag, z / mag);
+  }
+
+  double dot(Vector3 other) => x * other.x + y * other.y + z * other.z;
+
+  Vector3 cross(Vector3 other) => Vector3(
+        y * other.z - z * other.y,
+        z * other.x - x * other.z,
+        x * other.y - y * other.x,
+      );
+
+  Vector3 orthogonal() {
+    // Pick the smallest component to avoid degeneracy.
+    if (x.abs() < y.abs() && x.abs() < z.abs()) {
+      return Vector3(0, -z, y).normalized();
+    } else if (y.abs() < z.abs()) {
+      return Vector3(-z, 0, x).normalized();
+    } else {
+      return Vector3(-y, x, 0).normalized();
+    }
+  }
+
+  static double angleBetween(Vector3 a, Vector3 b) {
+    if (!a.isValid || !b.isValid) {
+      return double.nan;
+    }
+    final na = a.normalized();
+    final nb = b.normalized();
+    final dot = na.dot(nb).clamp(-1.0, 1.0).toDouble();
+    final angle = math.acos(dot);
+    return angle * 180 / math.pi;
+  }
+}
+
+/// Represents a quaternion for IMU orientation calculations.
+class Quaternion {
+  final double w;
+  final double x;
+  final double y;
+  final double z;
+
+  const Quaternion(this.w, this.x, this.y, this.z);
+
+  static const Quaternion identity = Quaternion(1, 0, 0, 0);
+
+  Quaternion normalized() {
+    final n = math.sqrt(w * w + x * x + y * y + z * z);
+    if (n < 1e-9 || !n.isFinite) {
+      return identity;
+    }
+    return Quaternion(w / n, x / n, y / n, z / n);
+  }
+
+  Quaternion conjugate() => Quaternion(w, -x, -y, -z);
+
+  Quaternion operator *(Quaternion other) => Quaternion(
+        w * other.w - x * other.x - y * other.y - z * other.z,
+        w * other.x + x * other.w + y * other.z - z * other.y,
+        w * other.y - x * other.z + y * other.w + z * other.x,
+        w * other.z + x * other.y - y * other.x + z * other.w,
+      );
+
+  Quaternion relativeTo(Quaternion other) => conjugate() * other;
+
+  double get angleRadians {
+    final clampedW = w.clamp(-1.0, 1.0).toDouble();
+    return 2 * math.acos(clampedW);
+  }
+
+  double get principalAngleDegrees {
+    final rad = angleRadians;
+    final normalizedRad = rad > math.pi ? (2 * math.pi - rad) : rad;
+    return normalizedRad * 180 / math.pi;
+  }
+
+  static Quaternion fromTwoVectors(Vector3 from, Vector3 to) {
+    if (!from.isValid || !to.isValid) {
+      return identity;
+    }
+    final f = from.normalized();
+    final t = to.normalized();
+    final dot = f.dot(t);
+    final cross = f.cross(t);
+    var w = 1 + dot;
+    Vector3 xyz = cross;
+    if (w < 1e-9) {
+      // 180-degree rotation, choose an orthogonal axis.
+      final axis = f.orthogonal();
+      return Quaternion(0, axis.x, axis.y, axis.z).normalized();
+    }
+    final q = Quaternion(w, xyz.x, xyz.y, xyz.z);
+    return q.normalized();
+  }
+
+  static Quaternion fromAccelerometer(Vector3 accel) {
+    // Assume the reference IMU frame has -Z pointing along gravity.
+    const reference = Vector3(0, 0, -1);
+    return fromTwoVectors(reference, accel);
+  }
+}
+
+/// IMU sample containing acceleration vector and derived quaternion.
+class ImuSample {
+  final int index;
+  final Vector3 acceleration;
+  final Quaternion orientation;
+
+  ImuSample({required this.index, required this.acceleration, required this.orientation});
+
+  factory ImuSample.fromAcceleration({required int index, required Vector3 acceleration}) {
+    final quat = Quaternion.fromAccelerometer(acceleration);
+    return ImuSample(index: index, acceleration: acceleration, orientation: quat);
+  }
+}
+
+class ImuPacket {
+  final double timestamp;
+  final double? emgRms;
+  final Map<int, ImuSample> samples;
+
+  ImuPacket({required this.timestamp, required this.emgRms, required this.samples});
+
+  ImuSample? sampleAt(int index) => samples[index];
+
+  static const int _imuCount = 6;
+
+  static ImuPacket? tryParse(String line) {
+    final values = _extractNumbers(line);
+    if (values.isEmpty) {
+      return null;
+    }
+    final ts = values[0];
+    if (!ts.isFinite) {
+      return null;
+    }
+
+    if (values.length == 2) {
+      // Backward compatible with original EMG-only payload.
+      return ImuPacket(
+        timestamp: ts,
+        emgRms: values[1],
+        samples: const <int, ImuSample>{},
+      );
+    }
+
+    const minPerImu = 3; // ax, ay, az
+    final minValues = minPerImu * _imuCount;
+
+    if (values.length < 1 + minValues) {
+      // Not enough values to cover six IMUs.
+      return null;
+    }
+
+    double? emg;
+    var offset = 1;
+    var available = values.length - offset;
+    final perImuCandidate = (available / _imuCount).floor();
+
+    if (values.length >= 2) {
+      final availableWithEmg = values.length - 2;
+      final perImuWithEmg = (availableWithEmg / _imuCount).floor();
+      final alignsWithoutEmg = available % _imuCount == 0;
+      final alignsWithEmg = availableWithEmg % _imuCount == 0;
+      final betterWithEmg =
+          perImuWithEmg >= minPerImu && perImuWithEmg > perImuCandidate;
+
+      if ((alignsWithEmg && !alignsWithoutEmg) || betterWithEmg) {
+        emg = values[1];
+        offset = 2;
+        available = availableWithEmg;
+      }
+    }
+
+    final perImu = (available / _imuCount).floor();
+    if (perImu < minPerImu) {
+      return null;
+    }
+
+    final samples = <int, ImuSample>{};
+    for (var i = 0; i < _imuCount; i++) {
+      final base = offset + i * perImu;
+      if (base + 2 >= values.length) {
+        return null;
+      }
+      final accel = Vector3(values[base], values[base + 1], values[base + 2]);
+      samples[i] = ImuSample.fromAcceleration(index: i, acceleration: accel);
+    }
+
+    return ImuPacket(timestamp: ts, emgRms: emg, samples: samples);
+  }
+
+  static List<double> _extractNumbers(String source) {
+    final matches = RegExp(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?').allMatches(source);
+    return [
+      for (final m in matches)
+        double.tryParse(m.group(0) ?? '')
+    ].whereType<double>().toList();
+  }
+}
+
+class JointAngleResult {
+  final String label;
+  final double vectorAngleDeg;
+  final double quaternionAngleDeg;
+
+  const JointAngleResult({
+    required this.label,
+    required this.vectorAngleDeg,
+    required this.quaternionAngleDeg,
+  });
 }
 
 /// Represents a single history record returned by the cloud API.
@@ -181,6 +413,19 @@ class BleIngestService {
   }
 }
 
+class _JointPair {
+  final int a;
+  final int b;
+  final String label;
+  const _JointPair(this.a, this.b, this.label);
+}
+
+const _jointPairs = <_JointPair>[
+  _JointPair(0, 1, '軀幹（後頸 vs 下背）'),
+  _JointPair(2, 3, '左肩（上臂 vs 肩胛）'),
+  _JointPair(4, 5, '右肩（上臂 vs 肩胛）'),
+];
+
 /// A reusable widget that draws a regression line chart for a [Series].
 class RegressionChart extends StatelessWidget {
   final Series series;
@@ -320,6 +565,7 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
   final List<FlSpot> _spots = [];
   double _lastX = 0;
   bool _connected = false;
+  List<JointAngleResult> _jointAngles = const [];
 
   @override
   void initState() {
@@ -332,21 +578,63 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
       await esp32.connect('ESP32_SIM_EMG_IMU');
       setState(() => _connected = true);
       esp32.listen((line) {
-        final parts = line.split(',');
-        if (parts.length >= 2) {
-          final ts = double.tryParse(parts[0]) ?? (_lastX + 1);
-          final emgRms = double.tryParse(parts[1]) ?? 0.0;
-          setState(() {
+        final packet = ImuPacket.tryParse(line);
+        if (packet == null) {
+          debugPrint('⚠️ 無法解析 IMU 資料: $line');
+          return;
+        }
+
+        setState(() {
+          if (packet.emgRms != null) {
+            final ts = _sanitizeTimestamp(packet.timestamp);
+            final emgRms = packet.emgRms ?? 0.0;
             _spots.add(FlSpot(ts, emgRms));
             _lastX = ts;
             if (_spots.length > 500) _spots.removeAt(0);
-          });
-          _uploadToCloud(ts, emgRms);
+          }
+          _jointAngles = _computeJointAngles(packet, _jointAngles);
+        });
+
+        if (packet.emgRms != null) {
+          _uploadToCloud(packet.timestamp, packet.emgRms!);
         }
       });
     } catch (e) {
       debugPrint('❌ Bluetooth connect error: $e');
     }
+  }
+
+  double _sanitizeTimestamp(double ts) {
+    if (ts.isFinite) {
+      return ts;
+    }
+    return _lastX + 1;
+  }
+
+  List<JointAngleResult> _computeJointAngles(
+    ImuPacket packet,
+    List<JointAngleResult> previous,
+  ) {
+    for (final pair in _jointPairs) {
+      if (packet.sampleAt(pair.a) == null || packet.sampleAt(pair.b) == null) {
+        return previous;
+      }
+    }
+
+    final results = <JointAngleResult>[];
+    for (final pair in _jointPairs) {
+      final a = packet.sampleAt(pair.a)!;
+      final b = packet.sampleAt(pair.b)!;
+      final vectorAngle = Vector3.angleBetween(a.acceleration, b.acceleration);
+      final quaternionAngle =
+          a.orientation.relativeTo(b.orientation).principalAngleDegrees;
+      results.add(JointAngleResult(
+        label: pair.label,
+        vectorAngleDeg: vectorAngle,
+        quaternionAngleDeg: quaternionAngle,
+      ));
+    }
+    return results;
   }
 
   Future<void> _uploadToCloud(double ts, double emgRms) async {
@@ -367,7 +655,14 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
     }
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: RegressionChart(series: Series(_spots), title: '即時 EMG RMS'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          RegressionChart(series: Series(_spots), title: '即時 EMG RMS'),
+          const SizedBox(height: 16),
+          Expanded(child: JointAngleList(angles: _jointAngles)),
+        ],
+      ),
     );
   }
 
@@ -375,6 +670,39 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
   void dispose() {
     esp32.dispose();
     super.dispose();
+  }
+}
+
+class JointAngleList extends StatelessWidget {
+  final List<JointAngleResult> angles;
+  const JointAngleList({super.key, required this.angles});
+
+  @override
+  Widget build(BuildContext context) {
+    if (angles.isEmpty) {
+      return const Center(child: Text('等待 IMU 資料...'));
+    }
+    return ListView.separated(
+      itemCount: angles.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final angle = angles[index];
+        return ListTile(
+          title: Text(angle.label),
+          subtitle: Text(
+            '向量夾角: ${_formatAngle(angle.vectorAngleDeg)}°\n'
+            '四元數差角: ${_formatAngle(angle.quaternionAngleDeg)}°',
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatAngle(double value) {
+    if (!value.isFinite) {
+      return '--';
+    }
+    return value.toStringAsFixed(1);
   }
 }
 
