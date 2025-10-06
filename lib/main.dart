@@ -355,6 +355,25 @@ class JointAngleMeasurement {
   });
 }
 
+/// Result of mapping IMU joint angles into a simplified RULA assessment.
+class RulaAssessment {
+  final int trunkScore;
+  final int leftScore;
+  final int rightScore;
+  final int finalScore;
+  final String dominantSide;
+  final String recommendation;
+
+  const RulaAssessment({
+    required this.trunkScore,
+    required this.leftScore,
+    required this.rightScore,
+    required this.finalScore,
+    required this.dominantSide,
+    required this.recommendation,
+  });
+}
+
 /// Service that handles Bluetooth Low Energy (BLE) ingestion from an ESP32 device.
 ///
 /// The service exposes separate [connect] and [listen] methods so you can
@@ -677,6 +696,7 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
   double? _startTimestamp;
   double? _latestPct;
   List<JointAngleMeasurement>? _latestJointAngles;
+  RulaAssessment? _latestRula;
 
   @override
   void initState() {
@@ -694,6 +714,7 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
       _startTimestamp = null;
       _latestPct = null;
       _latestJointAngles = null;
+      _latestRula = null;
     });
     try {
       await esp32.connect(BleIngestService.kDeviceName);
@@ -756,6 +777,7 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
       _lastX = x;
       _latestPct = pct;
       _latestJointAngles = jointAngles;
+      _latestRula = _calculateRulaAssessment(jointAngles);
       if (_spots.length > 500) {
         _spots.removeAt(0);
       }
@@ -821,6 +843,130 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
       ));
     }
     return results;
+  }
+
+  RulaAssessment? _calculateRulaAssessment(
+      List<JointAngleMeasurement>? measurements) {
+    if (measurements == null || measurements.length < 3) {
+      return null;
+    }
+
+    final trunkAngle = _resolveAngle(measurements[0]) ?? 0;
+    final leftAngle = _resolveAngle(measurements[1]) ?? 0;
+    final rightAngle = _resolveAngle(measurements[2]) ?? 0;
+
+    final trunkScore = _trunkScore(trunkAngle);
+    final leftUpperScore = _upperArmScore(leftAngle);
+    final rightUpperScore = _upperArmScore(rightAngle);
+
+    final scoreB = _scoreB(trunkScore);
+    final leftScore = _scoreC(_scoreA(leftUpperScore), scoreB);
+    final rightScore = _scoreC(_scoreA(rightUpperScore), scoreB);
+
+    final dominantIsLeft = leftScore >= rightScore;
+    final finalScore = dominantIsLeft ? leftScore : rightScore;
+    final dominantSide = dominantIsLeft ? '左側上肢' : '右側上肢';
+    final recommendation = _rulaRecommendation(finalScore);
+
+    return RulaAssessment(
+      trunkScore: scoreB,
+      leftScore: leftScore,
+      rightScore: rightScore,
+      finalScore: finalScore,
+      dominantSide: dominantSide,
+      recommendation: recommendation,
+    );
+  }
+
+  double? _resolveAngle(JointAngleMeasurement measurement) {
+    final quat = measurement.quaternionDegrees;
+    if (quat != null && quat.isFinite) {
+      return quat.abs();
+    }
+    final vec = measurement.vectorDegrees;
+    if (vec != null && vec.isFinite) {
+      return vec.abs();
+    }
+    return null;
+  }
+
+  int _upperArmScore(double angleDegrees) {
+    final angle = angleDegrees.abs();
+    if (angle <= 20) return 1;
+    if (angle <= 45) return 2;
+    if (angle <= 90) return 3;
+    return 4;
+  }
+
+  int _trunkScore(double angleDegrees) {
+    final angle = angleDegrees.abs();
+    if (angle <= 4) return 1;
+    if (angle <= 20) return 2;
+    if (angle <= 60) return 3;
+    return 4;
+  }
+
+  int _scoreA(int upperArmScore) {
+    const lowerArmNeutral = 1; // Assume 中性手肘
+    const wristNeutral = 1; // Assume 中性手腕
+    const tableA = [
+      [1, 2, 2],
+      [2, 2, 3],
+      [3, 3, 4],
+      [4, 4, 5],
+      [5, 5, 6],
+      [6, 6, 7],
+    ];
+    final upperIndex = upperArmScore.clamp(1, 6) - 1;
+    final lowerIndex = lowerArmNeutral.clamp(1, 3) - 1;
+    final base = tableA[upperIndex][lowerIndex];
+    return (base + wristNeutral - 1).clamp(1, 7);
+  }
+
+  int _scoreB(int trunkScore) {
+    const neckNeutral = 1; // Assume 中性脖子
+    const legsNeutral = 1; // Assume 中性腿部支撐
+    const tableB = [
+      [1, 2, 3, 4, 5, 6],
+      [2, 3, 4, 5, 6, 7],
+      [3, 4, 5, 6, 7, 7],
+      [4, 5, 6, 7, 7, 7],
+      [5, 6, 7, 7, 7, 7],
+      [6, 7, 7, 7, 7, 7],
+    ];
+    final neckIndex = neckNeutral.clamp(1, 6) - 1;
+    final trunkIndex = trunkScore.clamp(1, 6) - 1;
+    final base = tableB[neckIndex][trunkIndex];
+    return (base + legsNeutral - 1).clamp(1, 7);
+  }
+
+  int _scoreC(int scoreA, int scoreB) {
+    const tableC = [
+      [1, 2, 3, 3, 4, 5, 5],
+      [2, 2, 3, 4, 4, 5, 5],
+      [3, 3, 4, 4, 5, 6, 6],
+      [3, 3, 4, 5, 6, 7, 7],
+      [4, 4, 5, 6, 7, 7, 7],
+      [4, 4, 6, 6, 7, 7, 7],
+      [5, 5, 6, 7, 7, 7, 7],
+      [5, 5, 7, 7, 7, 7, 7],
+    ];
+    final aIndex = scoreA.clamp(1, 8) - 1;
+    final bIndex = scoreB.clamp(1, 7) - 1;
+    return tableC[aIndex][bIndex];
+  }
+
+  String _rulaRecommendation(int finalScore) {
+    if (finalScore <= 2) {
+      return '姿勢可接受，持續觀察';
+    }
+    if (finalScore <= 4) {
+      return '建議進一步評估與調整';
+    }
+    if (finalScore <= 6) {
+      return '需儘速採取改善措施';
+    }
+    return '需立即採取改善措施';
   }
 
   double? _angleBetweenVectors(Vector3 a, Vector3 b) {
@@ -942,6 +1088,45 @@ class _LivePredictionPageState extends State<LivePredictionPage> {
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
+                  ),
+                ],
+              ),
+            ),
+          if (_latestRula != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'RULA 快速上肢風險評估',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '主導側：${_latestRula!.dominantSide}，總分：${_latestRula!.finalScore}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '建議：${_latestRula!.recommendation}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '左上肢分數：${_latestRula!.leftScore}，右上肢分數：${_latestRula!.rightScore}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '軀幹/頸部分數：${_latestRula!.trunkScore}',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
