@@ -5,16 +5,30 @@ plugins {
 }
 
 android {
+<<<<<<< HEAD
     namespace = "com.example.fatigue_tree"
     compileSdk = 34
+=======
+    namespace = "com.example.fatigue_tree_v4" 
+    compileSdk = 36
+>>>>>>> feature/realtime-ai-cloud
 
+     // ← 新 namespace
     defaultConfig {
+<<<<<<< HEAD
         applicationId = "com.example.fatigue_tree"
         minSdk = flutter.minSdkVersion
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
         multiDexEnabled = true
+=======
+        applicationId = "com.example.fatigue_tree_v4"   // ← v4（最關鍵）
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 4
+        versionName = "0.4"
+>>>>>>> feature/realtime-ai-cloud
     }
 
     buildTypes {

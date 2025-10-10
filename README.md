@@ -68,6 +68,7 @@ ESP32 firmware. To verify the end-to-end flow:
 
 If the connection drops, the screen will show an error message with a button to
 retry. Ensure the ESP32 stays powered and within Bluetooth range during tests.
+<<<<<<< HEAD
 
 ## Troubleshooting
 
@@ -92,3 +93,5 @@ message. Common fixes include:
   Often a missing SDK component or incompatible AGP/Kotlin version is the root
   cause—updating to the versions noted in `android/settings.gradle.kts` and
   `android/app/build.gradle.kts` should resolve it.
+=======
+>>>>>>> feature/realtime-ai-cloud
