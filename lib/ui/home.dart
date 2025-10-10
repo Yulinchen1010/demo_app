@@ -7,6 +7,7 @@ import 'widgets/demo_emg_stream.dart';
 import '../data/models.dart';
 import '../data/streaming_service.dart';
 import '../data/bluetooth_streaming_service.dart';
+import 'cloud_page.dart';
 
 /// Minimal Home view per spec: RULA badge + realtime EMG chart.
 class HomeScaffold extends StatefulWidget {
@@ -57,7 +58,15 @@ class _HomeScaffoldState extends State<HomeScaffold> {
       appBar: AppBar(
         title: const Text('Fatigue Tree'),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.settings)),
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CloudPage()),
+              );
+            },
+            icon: const Icon(Icons.cloud),
+            tooltip: 'Cloud API',
+          ),
         ],
       ),
       body: Padding(

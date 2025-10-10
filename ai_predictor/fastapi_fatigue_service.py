@@ -41,8 +41,8 @@ def setup_chinese_font():
 setup_chinese_font()
 
 # ==================== 初始設定 ====================
-DB_PATH = "fatigue_data.db"
-MODEL_PATH = "models/fatigue_regressor.pkl"
+DB_PATH = os.getenv("DB_PATH", "fatigue_data.db")
+MODEL_PATH = os.getenv("MODEL_PATH", "models/fatigue_regressor.pkl")
 os.makedirs("models", exist_ok=True)
 
 # 設定時區：台灣時間 (UTC+8)
