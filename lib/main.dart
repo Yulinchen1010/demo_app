@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 
 import 'dart:async';
@@ -13,12 +14,13 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart'
     as classic;
 import 'package:permission_handler/permission_handler.dart';
+=======
+import 'package:flutter/material.dart';
+>>>>>>> feature/realtime-ai-cloud
 
-/// Base URL for your cloud API. Replace with your own endpoint.
-const kBaseUrl = 'https://api.your-cloud.com';
-/// API key for authenticating against the cloud API. Replace with your own key.
-const kApiKey = 'your_api_key';
+import 'ui/home.dart';
 
+<<<<<<< HEAD
 /// Global Dio client configured with sensible defaults.
 final _dio = Dio(
   BaseOptions(
@@ -705,7 +707,25 @@ class _PredictionHomeState extends State<PredictionHome> {
           NavigationDestination(icon: Icon(Icons.history), label: 'History'),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],
+=======
+void main() {
+  runApp(const FatigueTreeApp());
+}
+
+class FatigueTreeApp extends StatelessWidget {
+  const FatigueTreeApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Fatigue Tree',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        colorSchemeSeed: const Color(0xFF121212),
+        useMaterial3: true,
+>>>>>>> feature/realtime-ai-cloud
       ),
+      home: const HomeScaffold(),
     );
   }
 
@@ -762,6 +782,7 @@ class _PredictionHomeState extends State<PredictionHome> {
   }
 }
 
+<<<<<<< HEAD
 /// Page that connects to the ESP32, streams live EMG RMS values, shows them on a chart and uploads them to the cloud.
 class LivePredictionPage extends StatefulWidget {
   const LivePredictionPage({super.key, this.onHistoryTap});
@@ -2561,3 +2582,5 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
+=======
+>>>>>>> feature/realtime-ai-cloud
