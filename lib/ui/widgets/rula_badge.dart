@@ -11,8 +11,8 @@ class RulaBadge extends StatelessWidget {
     final s = score;
     final bg = _bgColorFor(s?.score ?? 0);
     final label = s == null
-        ? '--'
-        : 'RULA: ${s.score}${s.riskLabel != null ? ' (${s.riskLabel})' : ''}';
+        ? '姿勢風險指數（RULA）：--'
+        : '姿勢風險指數（RULA）：${s.score}${s.riskLabel != null ? '（${s.riskLabel}）' : ''}';
     final ts = updatedAt;
     final when = ts == null
         ? 'Updated: --:--:--'

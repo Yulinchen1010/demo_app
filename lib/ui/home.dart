@@ -55,7 +55,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Fatigue Tree'),
+        title: const Text('疲勞樹'),
         actions: [
           IconButton(onPressed: () {}, icon: const Icon(Icons.settings)),
         ],
@@ -74,16 +74,14 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                     _switchSource(v);
                   },
                   items: const [
-                    DropdownMenuItem(
-                        value: DataSource.websocket, child: Text('WebSocket')),
-                    DropdownMenuItem(
-                        value: DataSource.bluetooth, child: Text('Bluetooth')),
-                    DropdownMenuItem(value: DataSource.demo, child: Text('Demo')),
+                    DropdownMenuItem(value: DataSource.websocket, child: Text('網路串流')),
+                    DropdownMenuItem(value: DataSource.bluetooth, child: Text('藍牙')),
+                    DropdownMenuItem(value: DataSource.demo, child: Text('示範')),
                   ],
                 ),
                 const Spacer(),
                 IconButton(
-                  tooltip: 'Reconnect',
+                  tooltip: '重新連線',
                   onPressed: _reconnect,
                   icon: const Icon(Icons.sync),
                 ),
@@ -100,7 +98,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
               child: RealtimeEmgChart(
                   stream: _emg ?? Stream<EmgPoint>.empty(),
                   initialWindow: TimeWindow.s60,
-                  title: 'EMG RMS (live)'),
+                  title: '肌電強度（即時）'),
             ),
           ],
         ),
@@ -112,17 +110,17 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   String _statusLabel2(StreamStatus s) {
     switch (s) {
       case StreamStatus.idle:
-        return 'Waiting for data...';
+        return '等待資料...';
       case StreamStatus.connecting:
-        return 'Connecting...';
+        return '連線中...';
       case StreamStatus.connected:
-        return 'Connected';
+        return '已連線';
       case StreamStatus.reconnecting:
-        return 'Reconnecting...';
+        return '重新連線中...';
       case StreamStatus.error:
-        return 'Error - retrying';
+        return '錯誤 - 重試中';
       case StreamStatus.closed:
-        return 'Closed';
+        return '已關閉';
     }
   }
 
