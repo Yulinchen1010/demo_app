@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:async';
 
 import 'widgets/realtime_emg_chart.dart';
@@ -11,7 +11,7 @@ import '../data/bluetooth_streaming_service.dart';
 import '../data/cloud_api.dart';
 import '../data/cloud_subscriber.dart';
 import 'widgets/fatigue_light.dart';
-// 移除獨立雲端頁，改為彈出設定視窗
+// 蝘駁?函??脩垢???寧敶閮剖?閬?
 
 /// Minimal Home view per spec: RULA badge + realtime EMG chart.
 class HomeScaffold extends StatefulWidget {
@@ -61,12 +61,14 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('疲勞監測'),
+
+        title: const Text('疲勞樹'),
+
         actions: [
           IconButton(
             onPressed: _openCloudDialog,
             icon: const Icon(Icons.cloud),
-            tooltip: '雲端設定',
+            tooltip: '重新連線',
           ),
         ],
       ),
@@ -84,11 +86,11 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                     _switchSource(v);
                   },
                   items: const [
-                DropdownMenuItem(
-                        value: DataSource.websocket, child: Text('網路串流')),
-                    DropdownMenuItem(
-                        value: DataSource.bluetooth, child: Text('藍牙')),
-                    DropdownMenuItem(value: DataSource.demo, child: Text('示範')),
+
+                    DropdownMenuItem(value: DataSource.websocket, child: Text('網路串流')))),
+                    DropdownMenuItem(value: DataSource.bluetooth, child: Text('藍牙')))),
+
+                    DropdownMenuItem(value: DataSource.demo, child: Text('示範')))),
                   ],
                 ),
                 const Spacer(),
@@ -115,8 +117,8 @@ class _HomeScaffoldState extends State<HomeScaffold> {
               child: RealtimeEmgChart(
                   stream: _emg ?? Stream<EmgPoint>.empty(),
                   initialWindow: TimeWindow.s60,
-                  title: 'EMG RMS（即時）'),
-            ),
+
+                  title: '肌電強度（即時）'),
           ],
         ),
       ),
@@ -133,7 +135,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
         return StatefulBuilder(builder: (ctx, setState) {
           return AlertDialog(
             backgroundColor: Theme.of(context).colorScheme.surface,
-            title: const Text('雲端設定'),
+            title: const Text('疲勞樹'),
             content: SizedBox(
               width: 420,
               child: Column(
@@ -142,7 +144,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                   TextField(
                     controller: urlCtrl,
                     decoration: const InputDecoration(
-                      labelText: '伺服器位址（例：https://api.example.com）',
+                      labelText: '隡箸??其??嚗?嚗ttps://api.example.com嚗?,
                     ),
                   ),
                 ],
@@ -151,7 +153,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
             actions: [
               TextButton(
                 onPressed: busy ? null : () => Navigator.of(ctx).pop(),
-                child: const Text('關閉'),
+                child: const Text('??'),
               ),
               TextButton(
                 onPressed: busy
@@ -161,10 +163,10 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                         if (CloudApi.workerId.isEmpty) { CloudApi.setWorkerId('worker_1'); }
                         if (!_cloudSub.isRunning) { _cloudSub.start(); }
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已儲存伺服器位址')),
+                          const SnackBar(content: Text('撌脣摮撩?雿?')),
                         );
                       },
-                child: const Text('儲存'),
+                child: const Text('?脣?'),
               ),
               FilledButton(
                 onPressed: busy
@@ -179,20 +181,20 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                           if (!_cloudSub.isRunning) { _cloudSub.start(); }
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('健康檢查成功')),
+                              const SnackBar(content: Text('?亙熒瑼Ｘ??')),
                             );
                           }
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('健康檢查失敗：$e')),
+                              SnackBar(content: Text('?亙熒瑼Ｘ憭望?嚗?e')),
                             );
                           }
                         } finally {
                           setState(() => busy = false);
                         }
                       },
-                child: const Text('健康檢查'),
+                child: const Text('?亙熒瑼Ｘ'),
               ),
             ],
           );
@@ -205,17 +207,17 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   String _statusLabel2(StreamStatus s) {
     switch (s) {
       case StreamStatus.idle:
-        return '等待資料...';
+        return '蝑?鞈?...';
       case StreamStatus.connecting:
-        return '連線中...';
+        return '???銝?..';
       case StreamStatus.connected:
-        return '已連線';
+        return '撌脤??';
       case StreamStatus.reconnecting:
-        return '重新連線中...';
+        return '????銝?..';
       case StreamStatus.error:
-        return '錯誤 - 重試中';
+        return '?航炊 - ?岫銝?;
       case StreamStatus.closed:
-        return '已關閉';
+        return '撌脤???;
     }
   }
 
@@ -284,6 +286,10 @@ class _HomeScaffoldState extends State<HomeScaffold> {
     }
   }
 }
+
+
+
+
 
 
 
