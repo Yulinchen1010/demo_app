@@ -8,6 +8,9 @@ import 'widgets/cloud_status_banner.dart';
 import '../data/models.dart';
 import '../data/streaming_service.dart';
 import '../data/bluetooth_streaming_service.dart';
+import '../data/cloud_api.dart';
+import '../data/cloud_subscriber.dart';
+import 'widgets/fatigue_light.dart';
 // 移除獨立雲端頁，改為彈出設定視窗
 
 /// Minimal Home view per spec: RULA badge + realtime EMG chart.
@@ -30,6 +33,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   DateTime? _lastTs;
   StreamStatus _status = StreamStatus.idle;
   DataSource _source = DataSource.bluetooth;
+  final _cloudSub = CloudStatusSubscriber();
 
   @override
   void initState() {
@@ -97,6 +101,8 @@ class _HomeScaffoldState extends State<HomeScaffold> {
             ),
             const SizedBox(height: 8),
             const CloudStatusBanner(),
+            const SizedBox(height: 8),
+            FatigueLight(subscriber: _cloudSub),
             const SizedBox(height: 12),
             RulaBadge(score: _rula, updatedAt: _lastTs),
             const SizedBox(height: 6),
@@ -152,6 +158,8 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                     ? null
                     : () {
                         CloudApi.setBaseUrl(urlCtrl.text);
+                        if (CloudApi.workerId.isEmpty) { CloudApi.setWorkerId('worker_1'); }
+                        if (!_cloudSub.isRunning) { _cloudSub.start(); }
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('已儲存伺服器位址')),
                         );
@@ -168,6 +176,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                             CloudApi.setBaseUrl(urlCtrl.text.trim());
                           }
                           await CloudApi.health();
+                          if (!_cloudSub.isRunning) { _cloudSub.start(); }
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('健康檢查成功')),
