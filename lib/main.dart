@@ -10,11 +10,21 @@ class FatigueTreeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF00D1FF),
+      brightness: Brightness.dark,
+    );
     return MaterialApp(
-      title: 'Fatigue Tree',
+      title: '疲勞監測',
       theme: ThemeData(
         brightness: Brightness.dark,
-        colorSchemeSeed: const Color(0xFF121212),
+        colorScheme: scheme,
+        scaffoldBackgroundColor: const Color(0xFF0B0F14),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF0E141B),
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
         useMaterial3: true,
       ),
       home: const HomeScaffold(),
