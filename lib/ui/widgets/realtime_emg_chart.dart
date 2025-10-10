@@ -53,9 +53,9 @@ extension TimeWindowX on TimeWindow {
       };
 
   String get label => switch (this) {
-        TimeWindow.s30 => '30s',
-        TimeWindow.s60 => '60s',
-        TimeWindow.m5 => '5m',
+        TimeWindow.s30 => '30秒',
+        TimeWindow.s60 => '60秒',
+        TimeWindow.m5 => '5分',
       };
 }
 
@@ -214,7 +214,7 @@ class _RealtimeEmgChartState extends State<RealtimeEmgChart> {
               color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(.2),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Text('Waiting for data…'),
+            child: const Text('等待資料…'),
           )
         else
           SizedBox(

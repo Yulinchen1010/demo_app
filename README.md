@@ -68,3 +68,30 @@ ESP32 firmware. To verify the end-to-end flow:
 
 If the connection drops, the screen will show an error message with a button to
 retry. Ensure the ESP32 stays powered and within Bluetooth range during tests.
+<<<<<<< HEAD
+
+## Troubleshooting
+
+### "Gradle build failed to produce an .apk file"
+
+Flutter expects debug builds to land in `build/app/outputs/flutter-apk/`. When
+the Android tooling cannot create that artifact, the CLI prints the above
+message. Common fixes include:
+
+- Install Android SDK 34 (the project now targets/compiles against API 34) via
+  Android Studio's SDK Manager, then accept the licenses:
+  ```bash
+  flutter doctor --android-licenses
+  ```
+- Clean any stale artifacts before rebuilding:
+  ```bash
+  flutter clean
+  flutter pub get
+  flutter run
+  ```
+- If you still hit the error, look under `build/app/outputs/` for Gradle logs.
+  Often a missing SDK component or incompatible AGP/Kotlin version is the root
+  cause—updating to the versions noted in `android/settings.gradle.kts` and
+  `android/app/build.gradle.kts` should resolve it.
+=======
+>>>>>>> feature/realtime-ai-cloud

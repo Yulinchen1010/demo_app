@@ -5,16 +5,17 @@ plugins {
 }
 
 android {
-    namespace = "com.example.fatigue_tree_v4" 
+    namespace = "com.example.fatigue_tree_v4"
     compileSdk = 36
 
-     // ← 新 namespace
     defaultConfig {
-        applicationId = "com.example.fatigue_tree_v4"   // ← v4（最關鍵）
-        minSdk = 24
-        targetSdk = 36
-        versionCode = 4
-        versionName = "0.4"
+        applicationId = "com.example.fatigue_tree_v4"
+        minSdk = flutter.minSdkVersion
+        targetSdk = 34
+        // Read from pubspec.yaml (e.g., version: x.y.z+code)
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        multiDexEnabled = true
     }
 
     buildTypes {
