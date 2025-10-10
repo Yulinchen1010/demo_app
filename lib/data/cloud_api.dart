@@ -10,6 +10,7 @@ class CloudApi {
     'API_BASE_URL',
     defaultValue: '',
   );
+  static String _workerId = '';
 
   static final Dio _dio = Dio(BaseOptions(
     baseUrl: _baseUrl,
@@ -21,10 +22,15 @@ class CloudApi {
   ));
 
   static String get baseUrl => _baseUrl;
+  static String get workerId => _workerId;
 
   static void setBaseUrl(String url) {
     _baseUrl = url.trim();
     _dio.options.baseUrl = _baseUrl;
+  }
+
+  static void setWorkerId(String id) {
+    _workerId = id.trim();
   }
 
   static Future<Map<String, dynamic>> upload({
