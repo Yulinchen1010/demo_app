@@ -23,22 +23,22 @@ class _CloudPageState extends State<CloudPage> {
 
   Future<void> _saveBaseUrl() async {
     CloudApi.setBaseUrl(_urlCtrl.text);
-    _append('Base URL set to: ${CloudApi.baseUrl}');
+    _append('已設定伺服器：${CloudApi.baseUrl}');
   }
 
   Future<void> _upload() async {
     final worker = _workerCtrl.text.trim();
     final mvc = double.tryParse(_mvcCtrl.text.trim()) ?? 0;
     if (worker.isEmpty || CloudApi.baseUrl.isEmpty) {
-      _append('Please set Base URL and Worker ID');
+      _append('請先設定伺服器與使用者編號');
       return;
     }
     setState(() => _busy = true);
     try {
       final res = await CloudApi.upload(workerId: worker, percentMvc: mvc);
-      _append('Upload OK: $res');
+      _append('上傳成功：$res');
     } catch (e) {
-      _append('Upload error: $e');
+      _append('上傳失敗：$e');
     } finally {
       setState(() => _busy = false);
     }
@@ -47,15 +47,15 @@ class _CloudPageState extends State<CloudPage> {
   Future<void> _status() async {
     final worker = _workerCtrl.text.trim();
     if (worker.isEmpty || CloudApi.baseUrl.isEmpty) {
-      _append('Please set Base URL and Worker ID');
+      _append('請先設定伺服器與使用者編號');
       return;
     }
     setState(() => _busy = true);
     try {
       final res = await CloudApi.status(worker);
-      _append('Status: $res');
+      _append('狀態：$res');
     } catch (e) {
-      _append('Status error: $e');
+      _append('狀態錯誤：$e');
     } finally {
       setState(() => _busy = false);
     }
@@ -64,15 +64,15 @@ class _CloudPageState extends State<CloudPage> {
   Future<void> _predict() async {
     final worker = _workerCtrl.text.trim();
     if (worker.isEmpty || CloudApi.baseUrl.isEmpty) {
-      _append('Please set Base URL and Worker ID');
+      _append('請先設定伺服器與使用者編號');
       return;
     }
     setState(() => _busy = true);
     try {
       final res = await CloudApi.predict(worker);
-      _append('Predict: $res');
+      _append('預測：$res');
     } catch (e) {
-      _append('Predict error: $e');
+      _append('預測錯誤：$e');
     } finally {
       setState(() => _busy = false);
     }
@@ -81,7 +81,7 @@ class _CloudPageState extends State<CloudPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Cloud API')),
+      appBar: AppBar(title: const Text('雲端服務')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -90,7 +90,7 @@ class _CloudPageState extends State<CloudPage> {
             TextField(
               controller: _urlCtrl,
               decoration: const InputDecoration(
-                labelText: 'Base URL (e.g. https://api.example.com)',
+                labelText: '伺服器位址（例：https://api.example.com）',
               ),
             ),
             const SizedBox(height: 8),
@@ -98,7 +98,7 @@ class _CloudPageState extends State<CloudPage> {
               Expanded(
                 child: TextField(
                   controller: _workerCtrl,
-                  decoration: const InputDecoration(labelText: 'Worker ID'),
+                  decoration: const InputDecoration(labelText: '使用者編號'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -115,19 +115,19 @@ class _CloudPageState extends State<CloudPage> {
             Wrap(spacing: 8, runSpacing: 8, children: [
               ElevatedButton(
                 onPressed: _busy ? null : _saveBaseUrl,
-                child: const Text('Save Base URL'),
+                child: const Text('儲存伺服器'),
               ),
               ElevatedButton(
                 onPressed: _busy ? null : _upload,
-                child: const Text('Upload'),
+                child: const Text('上傳'),
               ),
               ElevatedButton(
                 onPressed: _busy ? null : _status,
-                child: const Text('Status'),
+                child: const Text('狀態'),
               ),
               ElevatedButton(
                 onPressed: _busy ? null : _predict,
-                child: const Text('Predict'),
+                child: const Text('預測'),
               ),
             ]),
             const SizedBox(height: 12),
@@ -154,4 +154,3 @@ class _CloudPageState extends State<CloudPage> {
     );
   }
 }
-

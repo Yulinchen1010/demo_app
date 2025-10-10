@@ -29,7 +29,7 @@ class _CloudStatusBannerState extends State<CloudStatusBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final base = CloudApi.baseUrl.isEmpty ? '(not set)' : CloudApi.baseUrl;
+    final base = CloudApi.baseUrl.isEmpty ? '(未設定)' : CloudApi.baseUrl;
     final has = _last != null;
     final color = !has
         ? Colors.blueGrey
@@ -54,12 +54,12 @@ class _CloudStatusBannerState extends State<CloudStatusBanner> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Cloud: $base',
+                Text('雲端：$base',
                     style: Theme.of(context).textTheme.labelMedium),
                 Text(
                   has
-                      ? 'Last ${_last!.op} • ${_last!.ok ? 'OK' : 'ERROR'} • ${_last!.message}'
-                      : 'No cloud activity yet',
+                      ? '最近 ${_last!.op} • ${_last!.ok ? '成功' : '失敗'} • ${_last!.message}'
+                      : '尚無雲端活動',
                   style: Theme.of(context)
                       .textTheme
                       .labelSmall
@@ -73,4 +73,3 @@ class _CloudStatusBannerState extends State<CloudStatusBanner> {
     );
   }
 }
-
