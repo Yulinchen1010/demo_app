@@ -38,7 +38,10 @@ def setup_chinese_font():
         plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
         print("⚠️ 字體設定失敗，使用預設字體")
 
-setup_chinese_font()
+try:
+    setup_chinese_font()
+except Exception:
+    pass
 
 # ==================== 初始設定 ====================
 DB_PATH = os.getenv("DB_PATH", "fatigue_data.db")
