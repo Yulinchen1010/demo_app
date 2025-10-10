@@ -5,7 +5,8 @@ import '../../data/cloud_subscriber.dart';
 
 class FatigueLight extends StatefulWidget {
   final CloudStatusSubscriber subscriber;
-  const FatigueLight({super.key, required this.subscriber});
+  final double size; // circle diameter
+  const FatigueLight({super.key, required this.subscriber, this.size = 48});
 
   @override
   State<FatigueLight> createState() => _FatigueLightState();
@@ -30,11 +31,11 @@ class _FatigueLightState extends State<FatigueLight> {
   @override
   Widget build(BuildContext context) {
     final risk = _last?.riskLevel ?? 0;
-    final label = _last?.label ?? '尚未訂閱';
+    final label = _last?.label; // 不在燈號區顯示『未取得雲端』
     final ts = _last?.ts;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white24),
@@ -43,17 +44,20 @@ class _FatigueLightState extends State<FatigueLight> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _lightCircle(Colors.red, active: risk >= 3),
               const SizedBox(width: 8),
               _lightCircle(Colors.orange, active: risk == 2),
               const SizedBox(width: 8),
               _lightCircle(Colors.green, active: risk == 1),
-              const Spacer(),
-              Text(
-                _statusText(risk, label),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              if (risk > 0 && (label != null && label.isNotEmpty)) ...[
+                const SizedBox(width: 12),
+                Text(
+                  _statusText(risk, label),
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
             ],
           ),
           if (ts != null)
@@ -72,8 +76,8 @@ class _FatigueLightState extends State<FatigueLight> {
   Widget _lightCircle(Color color, {required bool active}) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
-      width: 18,
-      height: 18,
+      width: widget.size,
+      height: widget.size,
       decoration: BoxDecoration(
         color: active ? color : color.withOpacity(0.2),
         shape: BoxShape.circle,

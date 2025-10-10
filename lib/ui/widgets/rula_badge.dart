@@ -11,8 +11,8 @@ class RulaBadge extends StatelessWidget {
     final s = score;
     final bg = _bgColorFor(s?.score ?? 0);
     final label = s == null
-        ? '姿勢風險指數（RULA）：--'
-        : '姿勢風險指數（RULA）：${s.score}${s.riskLabel != null ? '（${s.riskLabel}）' : ''}';
+        ? '姿勢風險分數（RULA）：--'
+        : '姿勢風險分數（RULA）：${s.score}${s.riskLabel != null ? '（${s.riskLabel}）' : ''}';
 
     final ts = updatedAt;
     final when = ts == null
@@ -25,7 +25,7 @@ class RulaBadge extends StatelessWidget {
         AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(12),
@@ -34,8 +34,8 @@ class RulaBadge extends StatelessWidget {
             label,
             style: Theme.of(context)
                 .textTheme
-                .headlineSmall
-                ?.copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+                .titleMedium
+                ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 6),

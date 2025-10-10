@@ -2,16 +2,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class NeuralTree extends StatelessWidget {
-  final List<double?> mvc; // up to 6 values (0-100). null → greyed node
+  final List<double?> mvc; // up to 6 values (0-100). null -> greyed node
   const NeuralTree({super.key, required this.mvc});
 
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: 16 / 9,
-      child: CustomPaint(
-        painter: _TreePainter(mvc),
-      ),
+      child: CustomPaint(painter: _TreePainter(mvc)),
     );
   }
 }
@@ -29,6 +27,7 @@ class _TreePainter extends CustomPainter {
       ..color = const Color(0xFF1D2733)
       ..strokeWidth = 8
       ..strokeCap = StrokeCap.round;
+
     // Trunk
     canvas.drawLine(center, trunkTop, trunkPaint);
 
@@ -39,8 +38,20 @@ class _TreePainter extends CustomPainter {
     canvas.drawLine(trunkTop, rightShoulder, trunkPaint);
 
     // Leaves layout: 3 per side within ±60° sector
-    final leftNodes = _fanPositions(leftShoulder, radius: size.shortestSide * 0.18, startDeg: 200, endDeg: 260, count: 3);
-    final rightNodes = _fanPositions(rightShoulder, radius: size.shortestSide * 0.18, startDeg: -80, endDeg: -20, count: 3);
+    final leftNodes = _fanPositions(
+      leftShoulder,
+      radius: size.shortestSide * 0.18,
+      startDeg: 200,
+      endDeg: 260,
+      count: 3,
+    );
+    final rightNodes = _fanPositions(
+      rightShoulder,
+      radius: size.shortestSide * 0.18,
+      startDeg: -80,
+      endDeg: -20,
+      count: 3,
+    );
 
     final nodes = [...leftNodes, ...rightNodes];
     for (int i = 0; i < nodes.length; i++) {
@@ -50,13 +61,13 @@ class _TreePainter extends CustomPainter {
   }
 
   void _drawNode(Canvas canvas, Offset p, double? v) {
-    final value = (v ?? 0).clamp(0, 100);
+    final double value = ((v ?? 0) as num).clamp(0, 100).toDouble();
     final color = v == null ? const Color(0xFF455A64) : _colorForMvc(value);
     final radius = 8 + 10 * (value / 100);
 
     // Glow
     final glow = Paint()
-      ..color = color.withOpacity(0.3)
+      ..color = color.withValues(alpha: 0.3)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 24);
     canvas.drawCircle(p, radius, glow);
 
@@ -70,26 +81,32 @@ class _TreePainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-        ),
+        style: const TextStyle(color: Colors.white, fontSize: 10),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
       ellipsis: '…',
     )..layout(maxWidth: 220);
     final offset = Offset(p.dx - tp.width / 2, p.dy - radius - 14 - tp.height);
-    // Subtle shadow for readability
+
+    // Shadow block behind text for readability
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.35)
+      ..color = Colors.black.withValues(alpha: 0.35)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawRect(
-        Rect.fromLTWH(offset.dx, offset.dy, tp.width, tp.height), shadowPaint);
+      Rect.fromLTWH(offset.dx, offset.dy, tp.width, tp.height),
+      shadowPaint,
+    );
     tp.paint(canvas, offset);
   }
 
-  List<Offset> _fanPositions(Offset origin, {required double radius, required double startDeg, required double endDeg, required int count}) {
+  List<Offset> _fanPositions(
+    Offset origin, {
+    required double radius,
+    required double startDeg,
+    required double endDeg,
+    required int count,
+  }) {
     final res = <Offset>[];
     for (int i = 0; i < count; i++) {
       final t = count == 1 ? 0.5 : i / (count - 1);

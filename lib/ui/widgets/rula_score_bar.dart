@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 class RulaScoreBar extends StatelessWidget {
   final double? score; // 1-7+
@@ -6,7 +6,7 @@ class RulaScoreBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = (score ?? 0).clamp(0, 9);
+    final double s = ((score ?? 0) as num).clamp(0, 9).toDouble();
     final bg = _colorForScore(s);
     return Container(
       height: 28,
@@ -18,18 +18,18 @@ class RulaScoreBar extends StatelessWidget {
         children: [
           // Marker line for current score
           Align(
-            alignment: Alignment(((s - 1.0) / 8.0 * 2.0 - 1.0).clamp(-1.0, 1.0), 0),
+            alignment: Alignment(((((s - 1.0) / 8.0) * 2.0) - 1.0).clamp(-1.0, 1.0) as double, 0),
             child: Container(width: 2, color: Colors.white),
           ),
           Center(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: bg.withOpacity(.25),
+                color: bg.withValues(alpha: .25),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                'RULA 分數：${s.toStringAsFixed(1)}',
+                'RULA ?嚗?{s.toStringAsFixed(1)}',
                 style: Theme.of(context).textTheme.labelLarge,
               ),
             ),
@@ -54,4 +54,5 @@ class RulaScoreBar extends StatelessWidget {
     return const Color(0xFF76FF03);
   }
 }
+
 

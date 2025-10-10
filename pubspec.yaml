@@ -1,8 +1,8 @@
-name: demo_app
+﻿name: demo_app
 description: Fatigue Tree demo
 publish_to: "none"
 
-version: 1.0.0+3
+version: 1.0.0+4
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -10,13 +10,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # --- 以下是程式實際用到的套件 ---
+  # --- 隞乩??舐?撘祕??啁?憟辣 ---
   dio: ^5.7.0
   fl_chart: ^0.66.2
   flutter_blue_plus: ^1.32.6
   permission_handler: ^11.3.1
 
-  # 如果你還想支援舊版 Serial (非 BLE)，才需要這行
+  # 憒?雿??單?渲???Serial (??BLE)嚗??閬?
   flutter_bluetooth_serial: ^0.4.0
 
   cupertino_icons: ^1.0.6
@@ -36,3 +36,4 @@ flutter_launcher_icons:
   image_path: assets/icon/chatgpt_app_icon.png
   adaptive_icon_foreground: assets/icon/chatgpt_app_icon.png
   adaptive_icon_background: '#121212'
+
