@@ -4,6 +4,7 @@ import 'dart:async';
 import 'widgets/realtime_emg_chart.dart';
 import 'widgets/rula_badge.dart';
 import 'widgets/demo_emg_stream.dart';
+import 'widgets/cloud_status_banner.dart';
 import '../data/models.dart';
 import '../data/streaming_service.dart';
 import '../data/bluetooth_streaming_service.dart';
@@ -98,6 +99,8 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            const CloudStatusBanner(),
             RulaBadge(score: _rula, updatedAt: _lastTs),
             const SizedBox(height: 6),
             Text(
