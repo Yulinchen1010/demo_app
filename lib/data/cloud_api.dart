@@ -105,6 +105,17 @@ class CloudApi {
       _eventsCtrl.add(e);
     }
   }
+
+  static Future<Map<String, dynamic>> health() async {
+    try {
+      final res = await _dio.get('/health');
+      _emit(CloudEvent('health', true, 'ok'));
+      return Map<String, dynamic>.from(res.data as Map);
+    } catch (e) {
+      _emit(CloudEvent('health', false, e.toString()));
+      rethrow;
+    }
+  }
 }
 
 class CloudEvent {

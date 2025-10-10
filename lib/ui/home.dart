@@ -8,7 +8,7 @@ import 'widgets/cloud_status_banner.dart';
 import '../data/models.dart';
 import '../data/streaming_service.dart';
 import '../data/bluetooth_streaming_service.dart';
-import 'cloud_page.dart';
+// 移除獨立雲端頁，改為彈出設定視窗
 
 /// Minimal Home view per spec: RULA badge + realtime EMG chart.
 class HomeScaffold extends StatefulWidget {
@@ -60,13 +60,9 @@ class _HomeScaffoldState extends State<HomeScaffold> {
         title: const Text('疲勞監測'),
         actions: [
           IconButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CloudPage()),
-              );
-            },
+            onPressed: _openCloudDialog,
             icon: const Icon(Icons.cloud),
-            tooltip: '雲端服務',
+            tooltip: '雲端設定',
           ),
         ],
       ),
@@ -101,6 +97,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
             ),
             const SizedBox(height: 8),
             const CloudStatusBanner(),
+            const SizedBox(height: 12),
             RulaBadge(score: _rula, updatedAt: _lastTs),
             const SizedBox(height: 6),
             Text(
@@ -117,6 +114,81 @@ class _HomeScaffoldState extends State<HomeScaffold> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _openCloudDialog() async {
+    final urlCtrl = TextEditingController(text: CloudApi.baseUrl);
+    bool busy = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setState) {
+          return AlertDialog(
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            title: const Text('雲端設定'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '伺服器位址（例：https://api.example.com）',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: busy ? null : () => Navigator.of(ctx).pop(),
+                child: const Text('關閉'),
+              ),
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () {
+                        CloudApi.setBaseUrl(urlCtrl.text);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已儲存伺服器位址')),
+                        );
+                      },
+                child: const Text('儲存'),
+              ),
+              FilledButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        setState(() => busy = true);
+                        try {
+                          if (urlCtrl.text.trim().isNotEmpty) {
+                            CloudApi.setBaseUrl(urlCtrl.text.trim());
+                          }
+                          await CloudApi.health();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('健康檢查成功')),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('健康檢查失敗：$e')),
+                            );
+                          }
+                        } finally {
+                          setState(() => busy = false);
+                        }
+                      },
+                child: const Text('健康檢查'),
+              ),
+            ],
+          );
+        });
+      },
     );
   }
 
