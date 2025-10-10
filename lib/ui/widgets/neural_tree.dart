@@ -62,6 +62,31 @@ class _TreePainter extends CustomPainter {
 
     final fill = Paint()..color = color;
     canvas.drawCircle(p, radius, fill);
+
+    // Label
+    final label = v == null
+        ? '未接'
+        : '肌力使用率 ${value.toStringAsFixed(0)}%（${_levelText(value)}）';
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: 220);
+    final offset = Offset(p.dx - tp.width / 2, p.dy - radius - 14 - tp.height);
+    // Subtle shadow for readability
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.35)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+    canvas.drawRect(
+        Rect.fromLTWH(offset.dx, offset.dy, tp.width, tp.height), shadowPaint);
+    tp.paint(canvas, offset);
   }
 
   List<Offset> _fanPositions(Offset origin, {required double radius, required double startDeg, required double endDeg, required int count}) {
@@ -79,6 +104,12 @@ class _TreePainter extends CustomPainter {
     if (v <= 20) return const Color(0xFF00E5FF); // cyan
     if (v <= 60) return const Color(0xFF76FF03); // green
     return const Color(0xFFFF3B30); // red
+  }
+
+  String _levelText(double v) {
+    if (v <= 20) return '低';
+    if (v <= 60) return '中';
+    return '高';
   }
 
   @override

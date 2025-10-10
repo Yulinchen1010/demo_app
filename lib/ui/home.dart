@@ -113,10 +113,12 @@ class _HomeScaffoldState extends State<HomeScaffold> {
               style: Theme.of(context).textTheme.labelSmall,
             ),
             const SizedBox(height: 16),
+            Text('即時 30 秒', style: Theme.of(context).textTheme.labelSmall),
+            const SizedBox(height: 6),
             Expanded(
               child: RealtimeEmgChart(
                   stream: _emg ?? Stream<EmgPoint>.empty(),
-                  initialWindow: TimeWindow.s60,
+                  initialWindow: TimeWindow.s30,
 
                   title: '肌電強度（即時）'),
           ],
@@ -286,6 +288,7 @@ class _HomeScaffoldState extends State<HomeScaffold> {
     }
   }
 }
+
 
 
 
