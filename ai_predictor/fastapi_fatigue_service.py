@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Tuple, Union
 import sqlite3
 import pandas as pd
 import numpy as np
@@ -42,6 +42,7 @@ setup_chinese_font()
 
 # ==================== 初始設定 ====================
 DB_PATH = "fatigue_data.db"
+DB_TIMEOUT = 30  # seconds
 MODEL_PATH = "models/fatigue_regressor.pkl"
 os.makedirs("models", exist_ok=True)
 
@@ -73,20 +74,24 @@ class BatchUpload(BaseModel):
     data: List[SensorData]
 
 # ==================== 資料庫初始化 ====================
+def get_db_connection():
+    """建立 SQLite 連線，統一設定逾時秒數"""
+    return sqlite3.connect(DB_PATH, timeout=DB_TIMEOUT)
+
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS sensor_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            worker_id TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            percent_mvc REAL NOT NULL
-        )
-    """)
-    c.execute("CREATE INDEX IF NOT EXISTS idx_worker_timestamp ON sensor_data(worker_id, timestamp)")
-    conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sensor_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                percent_mvc REAL NOT NULL
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_worker_timestamp ON sensor_data(worker_id, timestamp)")
+        conn.commit()
 
 init_db()
 
@@ -120,16 +125,76 @@ def load_or_train_model():
 MODEL = load_or_train_model()
 
 # ==================== 輔助函數 ====================
+def to_taiwan_datetime(value: Union[str, datetime, pd.Timestamp]) -> datetime:
+    """將輸入時間轉換為台灣時區 datetime"""
+    if isinstance(value, pd.Timestamp):
+        dt = value.to_pydatetime()
+    elif isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    else:
+        raise ValueError(f"Unsupported timestamp type: {type(value)}")
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=TZ_TAIWAN)
+    else:
+        dt = dt.astimezone(TZ_TAIWAN)
+    return dt
+
+
 def get_worker_data(worker_id: str) -> pd.DataFrame:
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query(
-        "SELECT * FROM sensor_data WHERE worker_id = ? ORDER BY timestamp DESC LIMIT 1000",
-        conn, params=(worker_id,)
-    )
-    conn.close()
+    with get_db_connection() as conn:
+        df = pd.read_sql_query(
+            "SELECT * FROM sensor_data WHERE worker_id = ? ORDER BY timestamp DESC LIMIT 1000",
+            conn,
+            params=(worker_id,),
+        )
     if not df.empty:
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['timestamp'] = df['timestamp'].apply(to_taiwan_datetime)
     return df
+
+
+def normalize_timestamp(raw_timestamp: Optional[str]) -> str:
+    """將輸入的時間字串正規化為台灣時區的 ISO8601 格式"""
+    if not raw_timestamp:
+        return get_taiwan_time().isoformat()
+
+    ts = raw_timestamp.strip()
+
+    # FastAPI APP 可能送出多種格式 (含 Z、含空白、含斜線)
+    try:
+        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+    except ValueError:
+        parsed = None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+            try:
+                parsed = datetime.strptime(ts, fmt)
+                break
+            except ValueError:
+                continue
+        if not parsed:
+            raise HTTPException(status_code=400, detail=f"不支援的時間格式: {raw_timestamp}")
+        dt = parsed.replace(tzinfo=TZ_TAIWAN)
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    return dt.astimezone(TZ_TAIWAN).isoformat()
+
+
+def insert_sensor_records(records: List[Tuple[str, str, float]]) -> int:
+    """批次寫入感測資料，回傳成功筆數"""
+    if not records:
+        return 0
+
+    with get_db_connection() as conn:
+        conn.executemany(
+            "INSERT INTO sensor_data (worker_id, timestamp, percent_mvc) VALUES (?, ?, ?)",
+            records,
+        )
+        conn.commit()
+        return len(records)
 
 def calculate_risk_level(mvc_change: float) -> tuple:
     """根據MVC變化量計算風險等級"""
@@ -171,22 +236,19 @@ def home():
 @app.post('/upload')
 def upload(item: SensorData):
     """上傳單筆感測器資料 (由 APP 自動上傳)"""
-    ts = item.timestamp or datetime.utcnow().isoformat()
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO sensor_data (worker_id, timestamp, percent_mvc) VALUES (?, ?, ?)",
-        (item.worker_id, ts, item.percent_mvc)
-    )
-    conn.commit()
-    conn.close()
-    
-    print(f"✅ 上傳成功: {item.worker_id} | MVC={item.percent_mvc}% | 時間={ts}")
-    
+    worker_id = item.worker_id.strip()
+    if not worker_id:
+        raise HTTPException(status_code=400, detail="worker_id 不可為空白")
+
+    ts = normalize_timestamp(item.timestamp)
+
+    insert_sensor_records([(worker_id, ts, float(item.percent_mvc))])
+
+    print(f"✅ 上傳成功: {worker_id} | MVC={item.percent_mvc}% | 時間={ts}")
+
     return {
         "status": "success",
-        "worker_id": item.worker_id,
+        "worker_id": worker_id,
         "timestamp": ts,
         "mvc": item.percent_mvc
     }
@@ -194,24 +256,25 @@ def upload(item: SensorData):
 @app.post('/upload_batch')
 def upload_batch(batch: BatchUpload):
     """批次上傳多筆資料"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
+    records: List[Tuple[str, str, float]] = []
     for item in batch.data:
-        ts = item.timestamp or datetime.utcnow().isoformat()
-        c.execute(
-            "INSERT INTO sensor_data (worker_id, timestamp, percent_mvc) VALUES (?, ?, ?)",
-            (item.worker_id, ts, item.percent_mvc)
-        )
-    
-    conn.commit()
-    conn.close()
-    
-    print(f"✅ 批次上傳成功: {len(batch.data)} 筆")
-    
+        worker_id = item.worker_id.strip()
+        if not worker_id:
+            raise HTTPException(status_code=400, detail="批次資料中存在空白的 worker_id")
+
+        ts = normalize_timestamp(item.timestamp)
+        records.append((worker_id, ts, float(item.percent_mvc)))
+
+    inserted = insert_sensor_records(records)
+
+    if inserted == 0:
+        raise HTTPException(status_code=400, detail="沒有有效的資料被寫入")
+
+    print(f"✅ 批次上傳成功: {inserted} 筆")
+
     return {
         "status": "success",
-        "uploaded": len(batch.data)
+        "uploaded": inserted
     }
 
 @app.get('/status/{worker_id}')
@@ -241,6 +304,16 @@ def get_status(worker_id: str):
     # 計算平均MVC (最近10筆)
     recent_avg = df.head(10)['percent_mvc'].mean()
     
+    preview = []
+    for offset in range(0, 31, 10):
+        future_time = time_diff + offset
+        predicted_risk = predict_fatigue_risk(current_mvc, initial_mvc, future_time)
+        preview.append({
+            "minutes_from_now": offset,
+            "predicted_mvc": round(initial_mvc + predicted_risk, 2),
+            "mvc_change": round(predicted_risk, 2)
+        })
+
     return {
         "worker_id": worker_id,
         "current_mvc": round(current_mvc, 2),
@@ -254,7 +327,43 @@ def get_status(worker_id: str):
         "recent_avg_mvc": round(recent_avg, 2),
         "last_update": str(latest['timestamp']),
         "data_count": len(df),
-        "recommendation": get_recommendation(risk_level, mvc_change)
+        "recommendation": get_recommendation(risk_level, mvc_change),
+        "prediction_preview": preview
+    }
+
+
+def build_connection_payload(worker_id: str, freshness_minutes: int) -> dict:
+    if freshness_minutes <= 0:
+        raise HTTPException(status_code=400, detail="freshness_minutes 必須大於 0")
+
+    df = get_worker_data(worker_id)
+    if df.empty:
+        raise HTTPException(404, f"找不到 {worker_id} 的資料")
+
+    latest = df.iloc[0]
+    latest_time = to_taiwan_datetime(latest['timestamp'])
+    now = get_taiwan_time()
+    minutes_since = round((now - latest_time).total_seconds() / 60, 2)
+
+    connected = minutes_since <= freshness_minutes
+
+    recent_samples = [
+        {
+            "timestamp": str(to_taiwan_datetime(row['timestamp'])),
+            "percent_mvc": float(row['percent_mvc'])
+        }
+        for _, row in df.head(5).iterrows()
+    ]
+
+    return {
+        "worker_id": worker_id,
+        "connected": connected,
+        "freshness_minutes": freshness_minutes,
+        "last_upload": str(latest_time),
+        "minutes_since_last_upload": minutes_since,
+        "latest_mvc": float(latest['percent_mvc']),
+        "samples_preview": recent_samples,
+        "total_records": int(len(df))
     }
 
 def get_recommendation(risk_level: int, mvc_change: float) -> str:
@@ -304,6 +413,16 @@ def predict(worker_id: str, horizon: int = 120):
             "current_change": round(current_mvc - initial_mvc, 2)
         },
         "predictions": predictions
+    }
+
+
+@app.get('/connection/{worker_id}')
+def connection_status(worker_id: str, freshness_minutes: int = 5):
+    """確認 APP 是否持續上傳資料至雲端"""
+    payload = build_connection_payload(worker_id, freshness_minutes)
+    return {
+        "status": "ok",
+        "detail": payload
     }
 
 @app.get('/chart/{worker_id}')
@@ -371,18 +490,17 @@ def chart(worker_id: str, horizon: int = 120):
 @app.get('/workers')
 def list_workers():
     """列出所有工作者"""
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query(
-        """SELECT worker_id, COUNT(*) as count, 
-           MAX(timestamp) as last_update,
-           AVG(percent_mvc) as avg_mvc,
-           MIN(percent_mvc) as min_mvc,
-           MAX(percent_mvc) as max_mvc
-           FROM sensor_data 
-           GROUP BY worker_id""",
-        conn
-    )
-    conn.close()
+    with get_db_connection() as conn:
+        df = pd.read_sql_query(
+            """SELECT worker_id, COUNT(*) as count,
+               MAX(timestamp) as last_update,
+               AVG(percent_mvc) as avg_mvc,
+               MIN(percent_mvc) as min_mvc,
+               MAX(percent_mvc) as max_mvc
+               FROM sensor_data
+               GROUP BY worker_id""",
+            conn,
+        )
     
     # 計算每個工作者的風險狀態
     workers = []
@@ -407,13 +525,12 @@ def list_workers():
 @app.delete('/clear/{worker_id}')
 def clear(worker_id: str):
     """清空工作者資料"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM sensor_data WHERE worker_id = ?", (worker_id,))
-    deleted = c.rowcount
-    conn.commit()
-    conn.close()
-    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM sensor_data WHERE worker_id = ?", (worker_id,))
+        deleted = c.rowcount
+        conn.commit()
+
     print(f"🗑️ 已刪除 {worker_id} 的 {deleted} 筆資料")
     
     return {
@@ -426,13 +543,12 @@ def clear(worker_id: str):
 @app.delete('/clear_all')
 def clear_all():
     """清空所有資料（慎用）"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM sensor_data")
-    total = c.fetchone()[0]
-    c.execute("DELETE FROM sensor_data")
-    conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM sensor_data")
+        total = c.fetchone()[0]
+        c.execute("DELETE FROM sensor_data")
+        conn.commit()
     
     print(f"🗑️ 已清空資料庫，刪除 {total} 筆資料")
     
@@ -445,26 +561,25 @@ def clear_all():
 @app.post('/test/generate/{worker_id}')
 def generate_test(worker_id: str, count: int = 20):
     """生成測試資料 (模擬每分鐘上傳)"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # 從30%開始，隨機遞增模擬疲勞累積
-    base_mvc = 30.0
-    
-    for i in range(count):
-        ts = (datetime.utcnow() - timedelta(minutes=count-i)).isoformat()
-        # MVC隨時間增加，模擬疲勞累積
-        mvc = base_mvc + i * np.random.uniform(0.5, 2.0) + np.random.normal(0, 2)
-        mvc = np.clip(mvc, 0, 100)
-        
-        c.execute(
-            "INSERT INTO sensor_data (worker_id, timestamp, percent_mvc) VALUES (?, ?, ?)",
-            (worker_id, ts, float(mvc))
-        )
-    
-    conn.commit()
-    conn.close()
-    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+
+        # 從30%開始，隨機遞增模擬疲勞累積
+        base_mvc = 30.0
+
+        for i in range(count):
+            ts = (get_taiwan_time() - timedelta(minutes=count - i)).isoformat()
+            # MVC隨時間增加，模擬疲勞累積
+            mvc = base_mvc + i * np.random.uniform(0.5, 2.0) + np.random.normal(0, 2)
+            mvc = np.clip(mvc, 0, 100)
+
+            c.execute(
+                "INSERT INTO sensor_data (worker_id, timestamp, percent_mvc) VALUES (?, ?, ?)",
+                (worker_id, ts, float(mvc))
+            )
+
+        conn.commit()
+
     print(f"✅ 已生成 {count} 筆測試資料 (模擬每分鐘上傳)")
     
     return {
@@ -477,14 +592,13 @@ def generate_test(worker_id: str, count: int = 20):
 @app.get('/health')
 def health():
     """系統健康檢查"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM sensor_data")
-    total = c.fetchone()[0]
-    c.execute("SELECT COUNT(DISTINCT worker_id) FROM sensor_data")
-    workers = c.fetchone()[0]
-    conn.close()
-    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM sensor_data")
+        total = c.fetchone()[0]
+        c.execute("SELECT COUNT(DISTINCT worker_id) FROM sensor_data")
+        workers = c.fetchone()[0]
+
     return {
         "status": "healthy",
         "model_loaded": MODEL is not None,
