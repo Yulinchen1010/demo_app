@@ -1,0 +1,220 @@
+    );
+  }
+
+  /// Releases resources and disconnects from the ESP32.
+  Future<void> dispose() async {
+    await _subscription?.cancel();
+    _subscription = null;
+    if (_connection != null) {
+      try {
+        await _connection!.close();
+      } catch (_) {
+        // Ignore errors during teardown.
+      }
+    }
+    _connection = null;
+    try {
+      await _bluetooth.cancelDiscovery();
+    } catch (_) {
+      // ignore discovery cancellation issues
+    }
+  }
+
+  Future<classic.BluetoothDevice?> _findDevice(String deviceName) async {
+    final bonded = await _bluetooth.getBondedDevices();
+    for (final device in bonded) {
+      if ((device.name ?? '').trim() == deviceName) {
+        return device;
+      }
+    }
+
+    classic.BluetoothDiscoveryResult? discoveryResult;
+    final stream = _bluetooth.startDiscovery();
+    try {
+      await for (final result in stream) {
+        final name = result.device.name ?? '';
+        if (name.trim() == deviceName) {
+          discoveryResult = result;
+          break;
+        }
+      }
+    } finally {
+      await _bluetooth.cancelDiscovery();
+    }
+    return discoveryResult?.device;
+  }
+
+  Future<bool> _ensurePermissions() async {
+    if (!Platform.isAndroid) {
+      return true;
+    }
+
+    final sdkInt = _androidSdkInt();
+    final requested = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.bluetooth,
+      Permission.locationWhenInUse,
+      Permission.location,
+    ].request();
+
+    if (sdkInt >= 31) {
+      bool scanGranted = requested[Permission.bluetoothScan]?.isGranted ?? false;
+      bool connectGranted =
+          requested[Permission.bluetoothConnect]?.isGranted ?? false;
+
+      if (!scanGranted) {
+        scanGranted = (await Permission.bluetoothScan.request()).isGranted;
+      }
+      if (!connectGranted) {
+        connectGranted =
+            (await Permission.bluetoothConnect.request()).isGranted;
+      }
+      return scanGranted && connectGranted;
+    }
+
+    // Android 30 ‰ª•‰?ÔºöÊ??áÂÇ≥Áµ±Ë??ôÊ?ÂÆö‰?Ê¨äÈ??≥ÂèØ?ã‰?
+    if (requested[Permission.bluetooth]?.isGranted ?? false) {
+      return true;
+    }
+
+    final locationGranted =
+        (requested[Permission.locationWhenInUse]?.isGranted ?? false) ||
+            (requested[Permission.location]?.isGranted ?? false);
+    return locationGranted;
+  }
+
+  int _androidSdkInt() {
+    final match = RegExp(r'SDK\s*(\d+)').firstMatch(Platform.version);
+    if (match != null) {
+      return int.tryParse(match.group(1) ?? '') ?? 0;
+    }
+    return 0;
+  }
+}
+
+/// A reusable widget that draws a regression line chart for a [Series].
+class RegressionChart extends StatelessWidget {
+  final Series series;
+  final String? title;
+  final double? minY, maxY;
+  const RegressionChart({
+    super.key,
+    required this.series,
+    this.title,
+    this.minY,
+    this.maxY,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = series.spots;
+    if (s.isEmpty) return  Center(child: Text('Ê≤íÊ?Ë≥áÊ?'));
+    final minx = s.first.x, maxx = s.last.x;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title != null)
+          Padding(
+            padding:  EdgeInsets.only(bottom: 8),
+            child: Text(
+              title!,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+        SizedBox(
+          height: 240,
+          child: LineChart(
+            LineChartData(
+              minX: minx,
+              maxX: maxx,
+              minY: minY ?? _autoMinY(s),
+              maxY: maxY ?? _autoMaxY(s),
+              gridData: const FlGridData(show: true),
+              borderData: FlBorderData(show: true),
+              titlesData: const FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: true, reservedSize: 36),
+                ),
+                bottomTitles:
+                    AxisTitles(sideTitles: SideTitles(showTitles: true)),
+                topTitles:
+                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles:
+                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: s,
+                  isCurved: true,
+                  barWidth: 2,
+                  color: Theme.of(context).colorScheme.primary,
+                  dotData: const FlDotData(show: false),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  double _autoMinY(List<FlSpot> s) {
+    final v = s.map((e) => e.y);
+    final m = v.reduce((a, b) => a < b ? a : b);
+    return m - (m.abs() * 0.1 + 0.05);
+  }
+
+  double _autoMaxY(List<FlSpot> s) {
+    final v = s.map((e) => e.y);
+    final m = v.reduce((a, b) => a > b ? a : b);
+    return m + (m.abs() * 0.1 + 0.05);
+  }
+}
+
+/// The entry point of the Flutter application. It sets up the theme and home page.
+void main() {
+debugPrint('?î• test log from main()');
+
+  print('>>> Running Fatigue UI v9 @ ${DateTime.now()}');
+  print('>>> Running from file: ${Platform.script}');
+  print('>>> Dart executable: ${Platform.resolvedExecutable}');
+  runApp(MyApp());
+}
+
+/// Root widget that configures the app and hosts the [PredictionHome] page.
+class MyApp extends StatelessWidget {
+  MyApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '?≤Â??êÊ∏¨',
+      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      home: const PredictionHome(),
+    );
+  }
+}
+
+/// Shell widget with a bottom navigation bar to switch between real-time and history views.
+class PredictionHome extends StatefulWidget {
+  const PredictionHome({super.key});
+  @override
+  State<PredictionHome> createState() => _PredictionHomeState();
+}
+
+class _PredictionHomeState extends State<PredictionHome> {
+  int _idx = 0;
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      // appBar: AppBar(title: Text(_idx == 0 ? '?≥Ê??êÊ∏¨' : 'Ê≠∑Âè≤Á¥Ä??)),
+      appBar: AppBar(title: Text('?î• UI Check ${DateTime.now()}')),
+
+      body: IndexedStack(
+        index: _idx,
+        children: const [
+          LivePredictionPage(),
+          HistoryPage(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(

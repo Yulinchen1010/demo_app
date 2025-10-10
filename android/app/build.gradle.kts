@@ -5,16 +5,16 @@ plugins {
 }
 
 android {
-    namespace = "com.example.fatigue_tree"
+    namespace = "com.example.fatigue_tree_v4" 
     compileSdk = 36
 
+     // ← 新 namespace
     defaultConfig {
-        applicationId = "com.example.fatigue_tree"
-        minSdk = flutter.minSdkVersion
+        applicationId = "com.example.fatigue_tree_v4"   // ← v4（最關鍵）
+        minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
-        multiDexEnabled = true
+        versionCode = 4
+        versionName = "0.4"
     }
 
     buildTypes {
@@ -23,8 +23,8 @@ android {
             isShrinkResources = false
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

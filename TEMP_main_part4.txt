@@ -1,0 +1,220 @@
+        selectedIndex: _idx,
+        onDestinationSelected: (i) => setState(() => _idx = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.show_chart), label: '?≥Ê?'),
+          NavigationDestination(icon: Icon(Icons.history), label: 'Ê≠∑Âè≤'),
+        ],
+      ),
+    );
+  }
+}
+
+/// Page that connects to the ESP32, streams live EMG RMS values, shows them on a chart and uploads them to the cloud.
+class LivePredictionPage extends StatefulWidget {
+  const LivePredictionPage({super.key});
+  @override
+  State<LivePredictionPage> createState() => _LivePredictionPageState();
+}
+
+class _LivePredictionPageState extends State<LivePredictionPage> {
+  final esp32 = BleIngestService();
+  final List<FlSpot> _spots = [];
+  double _lastX = 0;
+  bool _connected = false;
+  bool _connecting = true;
+  String? _error;
+  double? _startTimestamp;
+  double? _latestPct;
+  List<JointAngleMeasurement>? _latestJointAngles;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectAndListen();
+  }
+
+  Future<void> _connectAndListen() async {
+    setState(() {
+      _connecting = true;
+      _error = null;
+      _connected = false;
+      _spots.clear();
+      _lastX = 0;
+      _startTimestamp = null;
+      _latestPct = null;
+      _latestJointAngles = null;
+    });
+    try {
+      await esp32.connect(BleIngestService.kDeviceName);
+      if (!mounted) return;
+      setState(() {
+        _connected = true;
+        _connecting = false;
+      });
+      esp32.listen(
+        _handleIncomingLine,
+        onError: (error) {
+          if (!mounted) return;
+          setState(() {
+            _error = 'Ë≥áÊ?‰∏≤Ê??ØË™§Ôº?error';
+            _connected = false;
+            _connecting = false;
+          });
+        },
+        onDone: () {
+          if (!mounted) return;
+          setState(() {
+            _error = '?çÁ????Â∑≤‰∏≠??;
+            _connected = false;
+            _connecting = false;
+          });
+        },
+      );
+    } catch (e) {
+      debugPrint('??Bluetooth connect error: $e');
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _connecting = false;
+        _connected = false;
+      });
+    }
+  }
+
+  void _handleIncomingLine(String line) {
+    final parts = line.split(',');
+    if (parts.length < 2 || !mounted) {
+      return;
+    }
+
+    final rawTs = double.tryParse(parts[0]);
+    final emgRms = double.tryParse(parts[1]) ?? 0.0;
+    final pct = parts.length >= 3 ? double.tryParse(parts[2]) : null;
+    final imuReadings = _parseImuReadings(parts);
+    final jointAngles = _calculateJointAngles(imuReadings);
+
+    setState(() {
+      double x;
+      if (rawTs != null) {
+        _startTimestamp ??= rawTs;
+        x = (rawTs - _startTimestamp!) / 1000.0;
+      } else {
+        x = _lastX + 1;
+      }
+      _spots.add(FlSpot(x, emgRms));
+      _lastX = x;
+      _latestPct = pct;
+      _latestJointAngles = jointAngles;
+      if (_spots.length > 500) {
+        _spots.removeAt(0);
+      }
+    });
+
+    _uploadToCloud(rawTs, emgRms, pct);
+  }
+
+  List<ImuReading> _parseImuReadings(List<String> parts) {
+    if (parts.length <= 3) {
+      return const <ImuReading>[];
+    }
+    final values = <double>[];
+    for (var i = 3; i < parts.length; i++) {
+      final value = double.tryParse(parts[i].trim());
+      if (value != null) {
+        values.add(value);
+      }
+    }
+    final readings = <ImuReading>[];
+    for (var i = 0; i + 6 <= values.length && readings.length < 6; i += 6) {
+      readings.add(ImuReading.fromValues(values.sublist(i, i + 6)));
+    }
+    return readings;
+  }
+
+  List<JointAngleMeasurement>? _calculateJointAngles(
+      List<ImuReading> readings) {
+    if (readings.length < 2) {
+      return null;
+    }
+    const labels = [
+      'ËªÄÂππÔ?ÂæåÈ†∏ vs ‰∏ãË?Ôº?,
+      'Â∑¶ËÇ©Ôºà‰???vs ?©Ë?Ôº?,
+      '?≥ËÇ©Ôºà‰???vs ?©Ë?Ôº?,
+    ];
+    const pairs = [
+      (0, 1),
+      (2, 3),
+      (4, 5),
+    ];
+    final results = <JointAngleMeasurement>[];
+    for (var i = 0; i < pairs.length; i++) {
+      final (a, b) = pairs[i];
+      double? vectorDeg;
+      double? quaternionDeg;
+      if (readings.length > a && readings.length > b) {
+        final vectorRad =
+            _angleBetweenVectors(readings[a].accel, readings[b].accel);
+        final quaternionRad = _angleFromQuaternions(
+            readings[a].orientation, readings[b].orientation);
+        if (vectorRad != null) {
+          vectorDeg = vectorRad * 180 / math.pi;
+        }
+        if (quaternionRad != null) {
+          quaternionDeg = quaternionRad * 180 / math.pi;
+        }
+      }
+      results.add(JointAngleMeasurement(
+        label: labels[i],
+        vectorDegrees: vectorDeg,
+        quaternionDegrees: quaternionDeg,
+      ));
+    }
+    return results;
+  }
+
+  double? _angleBetweenVectors(Vector3 a, Vector3 b) {
+    final va = a.clone();
+    final vb = b.clone();
+    final lenA = va.length;
+    final lenB = vb.length;
+    if (lenA < 1e-6 || lenB < 1e-6) {
+      return null;
+    }
+    va.scale(1 / lenA);
+    vb.scale(1 / lenB);
+    final dot = math.max(-1.0, math.min(1.0, va.dot(vb)));
+    return math.acos(dot);
+  }
+
+  double? _angleFromQuaternions(Quaternion a, Quaternion b) {
+    final qa = a.copy()..normalize();
+    final qb = b.copy()..normalize();
+    qa.conjugate();
+    qa.multiply(qb);
+    qa.normalize();
+    final w = math.max(-1.0, math.min(1.0, qa.w));
+    return 2 * math.acos(w);
+  }
+
+  String _formatAngle(double? value) {
+    if (value == null || value.isNaN || value.isInfinite) {
+      return '--';
+    }
+    return value.toStringAsFixed(1);
+  }
+
+  Future<void> _uploadToCloud(
+      double? rawTimestampMs, double emgRms, double? emgPct) async {
+    try {
+      final ts = rawTimestampMs != null
+          ? rawTimestampMs.round()
+          : DateTime.now().millisecondsSinceEpoch;
+      await _dio.post('/predict/upload', data: {
+        'timestamp': ts,
+        'emg_rms': emgRms,
+        if (emgPct != null) 'emg_pct': emgPct,
+      });
+    } catch (e) {
+      debugPrint('??Upload error: $e');
+    }
+  }
