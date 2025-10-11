@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'models.dart';
+import 'mvc.dart';
+import 'rula.dart';
+import 'cloud_api.dart';
 
 enum StreamStatus { idle, connecting, connected, reconnecting, error, closed }
 
@@ -24,9 +27,12 @@ class StreamingService {
   StreamSubscription? _wsSub;
   Timer? _reconnectTimer;
   Duration _backoff = const Duration(seconds: 1);
+  DateTime? _lastRulaUploadAt;
+  int? _lastUploadedRulaScore;
 
   final _statusCtrl = StreamController<StreamStatus>.broadcast();
   final _emgCtrl = StreamController<EmgPoint>.broadcast();
+  final _mvcCtrl = StreamController<MvcPoint>.broadcast();
   final _rulaCtrl = StreamController<RulaScore>.broadcast();
   final _sampleCtrl = StreamController<TelemetrySample>.broadcast();
 
@@ -34,6 +40,7 @@ class StreamingService {
 
   Stream<StreamStatus> get status => _statusCtrl.stream;
   Stream<EmgPoint> get emg => _emgCtrl.stream;
+  Stream<MvcPoint> get mvc => _mvcCtrl.stream;
   Stream<RulaScore> get rula => _rulaCtrl.stream;
   Stream<TelemetrySample> get samples => _sampleCtrl.stream;
 
@@ -97,6 +104,7 @@ class StreamingService {
       final tsMs = _asInt(map['ts_ms']) ?? _asInt(map['timestamp']) ?? DateTime.now().millisecondsSinceEpoch;
       final ts = DateTime.fromMillisecondsSinceEpoch(tsMs);
       final emg = (map['emg_rms'] is num) ? (map['emg_rms'] as num).toDouble() : _asNum(map['emg'])?.toDouble() ?? 0.0;
+      final mvcPct = _asNum(map['percent_mvc'])?.toDouble() ?? _asNum(map['emg_pct'])?.toDouble();
       RulaScore? rula;
       final r = map['rula'];
       if (r is Map) {
@@ -104,13 +112,62 @@ class StreamingService {
         final label = r['risk_label']?.toString();
         if (score != null) rula = RulaScore(score, riskLabel: label);
       }
+      // If server didn't provide rula but provided angles, compute locally
+      if (rula == null) {
+        // Supported shapes:
+        // 1) angles: { left_shoulder: x, right_shoulder: y, trunk: z }
+        // 2) top-level: left_shoulder/right_shoulder/trunk
+        Map<String, dynamic> angles;
+        final a = map['angles'];
+        if (a is Map) {
+          angles = a.map((k, v) => MapEntry(k.toString(), v));
+        } else {
+          angles = map;
+        }
+        final ls = _asNum(angles['left_shoulder'])?.toDouble();
+        final rs = _asNum(angles['right_shoulder'])?.toDouble();
+        final tk = _asNum(angles['trunk'])?.toDouble();
+        if (ls != null || rs != null || tk != null) {
+          final computed = RulaCalculator.fromAngles(
+            leftShoulderDeg: ls,
+            rightShoulderDeg: rs,
+            trunkDeg: tk,
+          );
+          rula = computed;
+          _maybeUploadRula(computed);
+        }
+      }
 
       final point = EmgPoint(ts, emg);
       _emgCtrl.add(point);
+      if (mvcPct != null) {
+        _mvcCtrl.add(MvcPoint(ts, mvcPct.clamp(0, 100).toDouble()));
+      }
       if (rula != null) _rulaCtrl.add(rula);
       _sampleCtrl.add(TelemetrySample(ts, emg, rula));
     } catch (_) {
       // ignore malformed frames
+    }
+  }
+
+  Future<void> _maybeUploadRula(RulaScore s) async {
+    try {
+      if (CloudApi.baseUrl.isEmpty || CloudApi.workerId.isEmpty) return;
+      final now = DateTime.now();
+      final lastScore = _lastUploadedRulaScore;
+      final shouldByScore = lastScore == null || lastScore != s.score;
+      final shouldByTime = _lastRulaUploadAt == null || now.difference(_lastRulaUploadAt!).inSeconds >= 30;
+      if (!shouldByScore && !shouldByTime) return;
+      _lastUploadedRulaScore = s.score;
+      _lastRulaUploadAt = now;
+      await CloudApi.uploadRula(
+        workerId: CloudApi.workerId,
+        score: s.score,
+        riskLabel: s.riskLabel,
+        timestamp: now,
+      );
+    } catch (_) {
+      // ignore upload errors
     }
   }
 
@@ -135,6 +192,7 @@ class StreamingService {
     } catch (_) {}
     await _statusCtrl.close();
     await _emgCtrl.close();
+    await _mvcCtrl.close();
     await _rulaCtrl.close();
     await _sampleCtrl.close();
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'pages/connect_page.dart';
 import 'pages/realtime_page.dart';
 import 'pages/history_page.dart';
 
@@ -14,7 +15,7 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = const [RealtimePage(), HistoryPage()];
+    final pages = const [ConnectPage(), RealtimePage(), HistoryPage()];
     return Scaffold(
       body: SafeArea(child: pages[_index]),
       bottomNavigationBar: NavigationBar(
@@ -22,7 +23,8 @@ class _MainScaffoldState extends State<MainScaffold> {
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.speed), label: '即時預測'),
+          NavigationDestination(icon: Icon(Icons.settings_bluetooth), label: '連線'),
+          NavigationDestination(icon: Icon(Icons.speed), label: '即時監測'),
           NavigationDestination(icon: Icon(Icons.history), label: '歷史資料'),
         ],
       ),

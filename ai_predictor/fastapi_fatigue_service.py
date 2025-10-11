@@ -74,6 +74,14 @@ class SensorData(BaseModel):
 
 class BatchUpload(BaseModel):
     data: List[SensorData]
+    
+class RulaData(BaseModel):
+    worker_id: str
+    rula: dict
+    timestamp: Optional[str] = None
+
+# ========== RULA 簡化輸入模型 ==========
+## RULA scoring is handled on the client app. No server-side model required.
 
 # ==================== 資料庫初始化 ====================
 def init_db():
@@ -88,6 +96,16 @@ def init_db():
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_worker_timestamp ON sensor_data(worker_id, timestamp)")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS rula_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            worker_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            score INTEGER NOT NULL,
+            risk_label TEXT
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_rula_worker_timestamp ON rula_data(worker_id, timestamp)")
     conn.commit()
     conn.close()
 
@@ -134,6 +152,8 @@ def get_worker_data(worker_id: str) -> pd.DataFrame:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
     return df
 
+# RULA simplified scoring removed: computed client-side in Flutter app.
+
 def calculate_risk_level(mvc_change: float) -> tuple:
     """根據MVC變化量計算風險等級"""
     if mvc_change >= 30:
@@ -170,6 +190,30 @@ def home():
             "API文件": "GET /docs"
         }
     }
+
+@app.post('/upload_rula')
+def upload_rula(item: RulaData):
+    """接收已在 App 端計算好的 RULA 分數與標籤（不做運算）。"""
+    ts = item.timestamp or datetime.utcnow().isoformat()
+    score = int(item.rula.get('score', 0))
+    risk_label = item.rula.get('risk_label')
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO rula_data (worker_id, timestamp, score, risk_label) VALUES (?, ?, ?, ?)",
+        (item.worker_id, ts, score, str(risk_label) if risk_label is not None else None)
+    )
+    conn.commit()
+    conn.close()
+    print(f"[RULA] {item.worker_id} score={score} label={risk_label} ts={ts}")
+    return {
+        "status": "success",
+        "worker_id": item.worker_id,
+        "timestamp": ts,
+        "rula": {"score": score, "risk_label": risk_label}
+    }
+
+# No server-side RULA API; the mobile app computes RULA before uploading.
 
 @app.post('/upload')
 def upload(item: SensorData):

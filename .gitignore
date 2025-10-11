@@ -72,3 +72,10 @@ build/
 # === Misc build cache ===
 **/intermediates/
 **/outputs/*.hprof
+
+# === Backend (ai_predictor) artifacts ===
+ai_predictor/.venv/
+ai_predictor/__pycache__/
+ai_predictor/*.log
+ai_predictor/*.pid
+ai_predictor/*.db

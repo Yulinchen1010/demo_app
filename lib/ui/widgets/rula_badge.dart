@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import '../../data/models.dart';
+import 'info_sheets.dart';
 
 class RulaBadge extends StatelessWidget {
   final RulaScore? score;
@@ -22,7 +23,7 @@ class RulaBadge extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AnimatedContainer(
+        GestureDetector(onTap: () => showRulaInfo(context), child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -37,6 +38,7 @@ class RulaBadge extends StatelessWidget {
                 .titleMedium
                 ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
           ),
+        ),
         ),
         const SizedBox(height: 6),
         Text(

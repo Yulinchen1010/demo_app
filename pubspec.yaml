@@ -10,16 +10,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # --- 隞乩??舐?撘祕??啁?憟辣 ---
   dio: ^5.7.0
   fl_chart: ^0.66.2
   flutter_blue_plus: ^1.32.6
   permission_handler: ^11.3.1
-
-  # 憒?雿??單?渲???Serial (??BLE)嚗??閬?
   flutter_bluetooth_serial: ^0.4.0
-
   cupertino_icons: ^1.0.6
+  audioplayers: ^6.0.0
 
 dev_dependencies:
   flutter_test:
@@ -29,11 +26,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/audio/beep.wav
 
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: assets/icon/chatgpt_app_icon.png
-  adaptive_icon_foreground: assets/icon/chatgpt_app_icon.png
-  adaptive_icon_background: '#121212'
-
+  image_path_android: assets/icon/app_icon_fore.png
+  adaptive_icon_background: "#1D3B33"
+  adaptive_icon_foreground: assets/icon/app_icon_fore.png
+  min_sdk_android: 21

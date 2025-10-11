@@ -53,6 +53,30 @@ class CloudApi {
     }
   }
 
+  static Future<Map<String, dynamic>> uploadRula({
+    required String workerId,
+    required int score,
+    String? riskLabel,
+    DateTime? timestamp,
+  }) async {
+    final body = {
+      'worker_id': workerId,
+      'rula': {
+        'score': score,
+        if (riskLabel != null && riskLabel.isNotEmpty) 'risk_label': riskLabel,
+      },
+      if (timestamp != null) 'timestamp': timestamp.toUtc().toIso8601String(),
+    };
+    try {
+      final res = await _dio.post('/upload_rula', data: jsonEncode(body));
+      _emit(CloudEvent('upload_rula', true, 'worker=$workerId score=$score'));
+      return Map<String, dynamic>.from(res.data as Map);
+    } catch (e) {
+      _emit(CloudEvent('upload_rula', false, e.toString()));
+      rethrow;
+    }
+  }
+
   static Future<int> uploadBatch(List<Map<String, dynamic>> items) async {
     final body = {'data': items};
     try {

@@ -6,7 +6,7 @@ class RulaScoreBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double s = ((score ?? 0) as num).clamp(0, 9).toDouble();
+    final double s = (score ?? 0).clamp(0, 9).toDouble();
     final bg = _colorForScore(s);
     return Container(
       height: 28,
@@ -18,7 +18,7 @@ class RulaScoreBar extends StatelessWidget {
         children: [
           // Marker line for current score
           Align(
-            alignment: Alignment(((((s - 1.0) / 8.0) * 2.0) - 1.0).clamp(-1.0, 1.0) as double, 0),
+            alignment: Alignment(_alignmentFor(s), 0),
             child: Container(width: 2, color: Colors.white),
           ),
           Center(
@@ -37,6 +37,13 @@ class RulaScoreBar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  double _alignmentFor(double s) {
+    final ax = ((((s - 1.0) / 8.0) * 2.0) - 1.0);
+    if (ax < -1.0) return -1.0;
+    if (ax > 1.0) return 1.0;
+    return ax;
   }
 
   List<Color> _barGradient() => const [

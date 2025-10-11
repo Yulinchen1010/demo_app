@@ -12,6 +12,8 @@ import '../data/streaming_service.dart';
 import '../data/bluetooth_streaming_service.dart';
 import '../data/cloud_api.dart';
 import '../data/cloud_subscriber.dart';
+import '../system/status_aggregator.dart';
+import '../widgets/breath_indicator.dart';
 
 class HomeScaffold extends StatefulWidget {
   const HomeScaffold({super.key});
@@ -28,11 +30,17 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   BluetoothStreamingService? _bt;
   StreamSubscription<RulaScore>? _rulaSub;
   StreamSubscription<StreamStatus>? _statusSub;
+  StreamSubscription<EmgPoint>? _emgSub;
+  StreamSubscription<CloudEvent>? _cloudSubEvents;
   RulaScore? _rula;
   DateTime? _lastTs;
   StreamStatus _status = StreamStatus.idle;
   DataSource _source = DataSource.bluetooth;
   final _cloudSub = CloudStatusSubscriber();
+
+  // Status aggregation
+  final _agg = SystemStatusAggregator();
+  Timer? _tick;
 
   @override
   void initState() {
@@ -44,12 +52,46 @@ class _HomeScaffoldState extends State<HomeScaffold> {
       _source = DataSource.bluetooth;
       _useBluetooth();
     }
+
+    // Cloud API event wiring for pings and uploads
+    _cloudSubEvents = CloudApi.events.listen((e) {
+      final now = DateTime.now();
+      switch (e.op) {
+        case 'health':
+        case 'status':
+          _agg.set(
+            cloudConfigured: CloudApi.baseUrl.isNotEmpty && CloudApi.workerId.isNotEmpty,
+            lastCloudPingOk: e.ok ? now : null,
+            lastCloudPingFail: e.ok ? null : now,
+          );
+          break;
+        case 'upload':
+        case 'upload_rula':
+        case 'upload_batch':
+          _agg.set(
+            lastUploadOkAt: e.ok ? now : null,
+            lastUploadErrorAt: e.ok ? null : now,
+          );
+          break;
+        default:
+          break;
+      }
+    });
+
+    // Periodic UI tick to keep breathing and timing fresh
+    _tick = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted) return;
+      setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _rulaSub?.cancel();
     _statusSub?.cancel();
+    _emgSub?.cancel();
+    _cloudSubEvents?.cancel();
+    _tick?.cancel();
     _ws?.dispose();
     _bt?.stop();
     super.dispose();
@@ -101,12 +143,53 @@ class _HomeScaffoldState extends State<HomeScaffold> {
             FatigueLight(subscriber: _cloudSub),
             const SizedBox(height: 8),
             const CloudStatusBanner(),
-            const SizedBox(height: 12),
-            RulaBadge(score: _rula, updatedAt: _lastTs),
-            const SizedBox(height: 6),
-            Text(
-              _statusLabel2(_status),
-              style: Theme.of(context).textTheme.labelSmall,
+          const SizedBox(height: 12),
+          // Aggregated system indicators
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B1220), // 不透明深底，避免色偏
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withOpacity(.08)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                BreathIndicator(color: _agg.mcu, label: 'MCU 連線'),
+                BreathIndicator(color: _agg.cloud, label: '雲端狀態'),
+                BreathIndicator(color: _agg.upload, label: '上傳狀態'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Builder(builder: (context) {
+            // Debug line (kDebugMode-like behavior without import); always show lightly here
+            final now = DateTime.now();
+            String fmtAgo(DateTime? t) {
+              if (t == null) return '-';
+              return '${now.difference(t).inSeconds}s';
+            }
+            final btConnected = _status == StreamStatus.connected;
+            final btConnecting = _status == StreamStatus.connecting || _status == StreamStatus.reconnecting;
+            final btScanning = false;
+            final cloudConfigured = CloudApi.baseUrl.isNotEmpty && CloudApi.workerId.isNotEmpty;
+            final cloudPaused = false;
+            return Text(
+              'BT: connected=' + btConnected.toString() + ' connecting=' + btConnecting.toString() + ' scanning=' + btScanning.toString() +
+              ' | Cloud: cfg=' + cloudConfigured.toString() + ' paused=' + cloudPaused.toString() +
+              ' lastOk=' + fmtAgo(_agg.lastCloudPingOk) +
+              ' | Upload: lastOk=' + fmtAgo(_agg.lastUploadOkAt) +
+              ' lastPkt=' + fmtAgo(_agg.lastPacketAt) +
+              ' lastErr=' + fmtAgo(_agg.lastUploadErrorAt),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
+            );
+          }),
+          const SizedBox(height: 12),
+          RulaBadge(score: _rula, updatedAt: _lastTs),
+          const SizedBox(height: 6),
+          Text(
+            _statusLabel2(_status),
+            style: Theme.of(context).textTheme.labelSmall,
             ),
             const SizedBox(height: 16),
             Text('即時 30 秒', style: Theme.of(context).textTheme.labelSmall),
@@ -169,6 +252,9 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                     : () {
                         CloudApi.setBaseUrl(urlCtrl.text.trim());
                         CloudApi.setWorkerId(workerCtrl.text.trim());
+                        _agg.set(
+                          cloudConfigured: CloudApi.baseUrl.isNotEmpty && CloudApi.workerId.isNotEmpty,
+                        );
                         if (CloudApi.baseUrl.isNotEmpty &&
                             CloudApi.workerId.isNotEmpty &&
                             !_cloudSub.isRunning) {
@@ -192,6 +278,9 @@ class _HomeScaffoldState extends State<HomeScaffold> {
                           if (workerCtrl.text.trim().isNotEmpty) {
                             CloudApi.setWorkerId(workerCtrl.text.trim());
                           }
+                          _agg.set(
+                            cloudConfigured: CloudApi.baseUrl.isNotEmpty && CloudApi.workerId.isNotEmpty,
+                          );
                           await CloudApi.health();
                           if (!_cloudSub.isRunning) {
                             _cloudSub.start();
@@ -265,18 +354,36 @@ class _HomeScaffoldState extends State<HomeScaffold> {
   void _useWebSocket() {
     _ws = StreamingService();
     _emg = _ws!.emg;
+    _emgSub?.cancel();
+    _emgSub = _emg!.listen((e) => _agg.set(lastPacketAt: DateTime.now()));
     _rulaSub = _ws!.rula.listen((s) => setState(() {
           _rula = s;
           _lastTs = DateTime.now();
         }));
-    _statusSub = _ws!.status.listen((st) => setState(() => _status = st));
+    _statusSub = _ws!.status.listen((st) {
+      setState(() => _status = st);
+      _agg.set(
+        btConnected: st == StreamStatus.connected,
+        btConnecting: st == StreamStatus.connecting || st == StreamStatus.reconnecting,
+        btScanning: false,
+      );
+    });
     _ws!.start();
   }
 
   void _useBluetooth() {
     _bt = BluetoothStreamingService();
     _emg = _bt!.emg;
-    _statusSub = _bt!.status.listen((st) => setState(() => _status = st));
+    _emgSub?.cancel();
+    _emgSub = _emg!.listen((e) => _agg.set(lastPacketAt: DateTime.now()));
+    _statusSub = _bt!.status.listen((st) {
+      setState(() => _status = st);
+      _agg.set(
+        btConnected: st == StreamStatus.connected,
+        btConnecting: st == StreamStatus.connecting || st == StreamStatus.reconnecting,
+        btScanning: false,
+      );
+    });
     _bt!.start();
   }
 

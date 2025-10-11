@@ -69,6 +69,8 @@ class RealtimeEmgChart extends StatefulWidget {
   final double? minY;
   final double? maxY;
   final String title;
+  final double height;
+  final bool compact;
 
   const RealtimeEmgChart({
     super.key,
@@ -77,6 +79,8 @@ class RealtimeEmgChart extends StatefulWidget {
     this.minY,
     this.maxY,
     this.title = 'EMG RMS',
+    this.height = 220,
+    this.compact = false,
   });
 
   @override
@@ -178,7 +182,7 @@ class _RealtimeEmgChartState extends State<RealtimeEmgChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        if (!widget.compact) Row(
           children: [
             Expanded(
               child: Text(
@@ -205,10 +209,10 @@ class _RealtimeEmgChartState extends State<RealtimeEmgChart> {
             )
           ],
         ),
-        const SizedBox(height: 8),
+        if (!widget.compact) const SizedBox(height: 8),
         if (spots.isEmpty)
           Container(
-            height: 220,
+            height: widget.height,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(.2),
@@ -218,24 +222,24 @@ class _RealtimeEmgChartState extends State<RealtimeEmgChart> {
           )
         else
           SizedBox(
-            height: 220,
+            height: widget.height,
             child: LineChart(
               LineChartData(
                 minX: minX,
                 maxX: maxX,
                 minY: minY,
                 maxY: maxY,
-                gridData: const FlGridData(show: true),
+                gridData: FlGridData(show: !widget.compact),
                 borderData: FlBorderData(show: true),
                 titlesData: FlTitlesData(
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  leftTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: true, reservedSize: 40),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(showTitles: !widget.compact, reservedSize: !widget.compact ? 40 : 0),
                   ),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
-                      showTitles: true,
+                      showTitles: !widget.compact,
                       interval: _tickInterval(window),
                       getTitlesWidget: (value, meta) => Padding(
                         padding: const EdgeInsets.only(top: 4),
