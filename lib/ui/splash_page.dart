@@ -10,10 +10,11 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> {
+  Timer? _navTimer;
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 900), () {
+    _navTimer = Timer(const Duration(milliseconds: 900), () {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const MainScaffold()),
@@ -22,12 +23,18 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   @override
+  void dispose() {
+    _navTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
       body: Center(
         child: Text(
-          'FATIGUE\nTREE',
+          'Fatigue Tree',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: Colors.white,
@@ -39,4 +46,3 @@ class _SplashPageState extends State<SplashPage> {
     );
   }
 }
-

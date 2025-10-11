@@ -1,5 +1,5 @@
-﻿import 'package:flutter/material.dart';
-import 'ui\/splash_page.dart';
+import 'package:flutter/material.dart';
+import 'ui/splash_page.dart';
 
 void main() {
   runApp(const FatigueTreeApp());
@@ -15,7 +15,7 @@ class FatigueTreeApp extends StatelessWidget {
       brightness: Brightness.dark,
     );
     return MaterialApp(
-      title: '疲勞樹',
+      title: 'Fatigue Tree',
       theme: ThemeData(
         brightness: Brightness.dark,
         colorScheme: scheme,
@@ -31,5 +31,4 @@ class FatigueTreeApp extends StatelessWidget {
     );
   }
 }
-
 
