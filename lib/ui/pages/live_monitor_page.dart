@@ -383,7 +383,7 @@ class GoConnectBanner extends StatelessWidget {
             Expanded(
               child: Text(
                 '\u5c1a\u672a\u9023\u7dda\uff0c\u9ede\u6b64\u524d\u5f80\u9023\u7dda\u9801',
-                style: TextStyle(fontSize: 13, color: Color(0xFFAAB2BD)),
+                style: TextStyle(fontSize: 15, color: Color(0xFFAAB2BD)),
               ),
             ),
             Icon(Icons.chevron_right, color: Color(0xFFAAB2BD)),
@@ -425,15 +425,15 @@ class _MetricInfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: Colors.white70),
+         Row(
+           children: [
+              Icon(icon, size: 20, color: Colors.white70),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
                     letterSpacing: 0.3,
@@ -443,9 +443,9 @@ class _MetricInfoCard extends StatelessWidget {
               IconButton(
                 onPressed: onInfo,
                 icon: const Icon(Icons.info_outline,
-                    size: 18, color: Colors.white70),
+                    size: 20, color: Colors.white70),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               ),
             ],
           ),
@@ -453,7 +453,7 @@ class _MetricInfoCard extends StatelessWidget {
           Text(
             value,
             style: const TextStyle(
-              fontSize: 28,
+              fontSize: 34,
               fontWeight: FontWeight.w700,
               color: Colors.white,
               letterSpacing: 0.4,
@@ -462,7 +462,7 @@ class _MetricInfoCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+            style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
           ),
         ],
       ),
