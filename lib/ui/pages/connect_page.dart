@@ -767,25 +767,23 @@ class _SummaryEntry extends StatelessWidget {
             child: Text(
               label,
               style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
+                fontSize: 13,
+                color: Color(0xFFAAB2BD),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               value,
               style: const TextStyle(
-                fontSize: 15,
-                color: Colors.white,
+                fontSize: 13,
+                color: Color(0xFFAAB2BD),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.left,
             ),
           ),
         ],
