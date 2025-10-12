@@ -91,27 +91,24 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Text(
-              '\u75b2\u52de\u6307\u793a\u71c8',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-                letterSpacing: 0.3,
+        GestureDetector(
+          onTap: widget.onExplainTap,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Text(
+                '\u75b2\u52de\u6307\u793a\u71c8',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.3,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.info_outline,
-                  size: 18, color: Color(0xFFAAB2BD)),
-              tooltip: '\u8aaa\u660e\u8207\u5224\u65b7',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              onPressed: widget.onExplainTap,
-            ),
-          ],
+              SizedBox(width: 6),
+              Icon(Icons.info_outline, size: 20, color: Color(0xFFAAB2BD)),
+            ],
+          ),
         ),
         const SizedBox(height: 8),
         Center(
@@ -141,7 +138,7 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection>
                                 RiskTheme.label(level!),
                                 key: ValueKey<RiskLevel>(level),
                                 style: const TextStyle(
-                                  fontSize: 36,
+                                  fontSize: 30,
                                   fontWeight: FontWeight.w800,
                                   color: Colors.white,
                                   height: 1.1,
@@ -155,7 +152,7 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection>
                                   Text(
                                     '\u7b49\u5f85\u8cc7\u6599',
                                     style: TextStyle(
-                                      fontSize: 15,
+                                      fontSize: 13,
                                       color: Color(0xFFE2E8F0),
                                       height: 1.2,
                                       fontWeight: FontWeight.w600,

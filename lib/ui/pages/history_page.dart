@@ -107,21 +107,15 @@ class _HistoryPageState extends State<HistoryPage> {
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                '\u6b77\u53f2\u8cc7\u6599',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6,
-                  color: Colors.white,
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  onPressed: () => _showHelp(context),
+                  icon: const Icon(Icons.help_outline, color: Color(0xFFAAB2BD)),
+                  tooltip: '\u6b77\u53f2\u8cc7\u6599\u8aaa\u660e',
                 ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                '\u9078\u64c7\u65e5\u671f\u4ee5\u67e5\u770b\u7576\u65e5\u7684 RULA/%MVC \u8207\u4e0a\u50b3\u72c0\u614b\u3002',
-                style: TextStyle(fontSize: 13, color: Color(0xFFAAB2BD), height: 1.4),
               ),
               const SizedBox(height: 12),
               _DatePickerWheel(
@@ -559,4 +553,29 @@ class _TrendPlaceholder extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showHelp(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF1E252C),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text(
+        '\u6b77\u53f2\u8cc7\u6599\u8aaa\u660e',
+        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+      ),
+      content: const Text(
+        '\u9078\u64c7\u65e5\u671f\u4ee5\u67e5\u770b\u7576\u65e5\u7684 RULA/%MVC \u8207\u4e0a\u50b3\u72c0\u614b\u3002\n\n'
+        '\u63a8\u85a6\u5728\u9023\u7dda\u5b8c\u6210\u4e26\u4e0a\u50b3\u8cc7\u6599\u5f8c\uff0c\u518d\u4f86\u6b64\u9801\u67e5\u8a62\u3002',
+        style: TextStyle(fontSize: 13, color: Color(0xFFAAB2BD), height: 1.45),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('\u6211\u77e5\u9053\u4e86'),
+        ),
+      ],
+    ),
+  );
 }
