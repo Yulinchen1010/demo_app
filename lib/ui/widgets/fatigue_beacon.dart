@@ -96,7 +96,7 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection>
             const Text(
               '\u75b2\u52de\u6307\u793a\u71c8',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: Colors.white,
                 letterSpacing: 0.3,
@@ -141,7 +141,7 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection>
                                 RiskTheme.label(level!),
                                 key: ValueKey<RiskLevel>(level),
                                 style: const TextStyle(
-                                  fontSize: 30,
+                                  fontSize: 36,
                                   fontWeight: FontWeight.w800,
                                   color: Colors.white,
                                   height: 1.1,
@@ -155,7 +155,7 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection>
                                   Text(
                                     '\u7b49\u5f85\u8cc7\u6599',
                                     style: TextStyle(
-                                      fontSize: 13,
+                                      fontSize: 15,
                                       color: Color(0xFFE2E8F0),
                                       height: 1.2,
                                       fontWeight: FontWeight.w600,
