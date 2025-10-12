@@ -725,8 +725,8 @@ class _SystemSummaryCard extends StatelessWidget {
         children: [
           Row(
             children: const [
-              Icon(Icons.memory, size: 16, color: Colors.white70),
-              SizedBox(width: 6),
+              Icon(Icons.memory, size: 20, color: Colors.white70),
+              SizedBox(width: 8),
               Text(
                 '\u7cfb\u7d71\u6458\u8981',
                 style: TextStyle(
@@ -763,16 +763,29 @@ class _SummaryEntry extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 72,
+            width: 96,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 13, color: Colors.white),
+              style: const TextStyle(
+                fontSize: 15,
+                color: Colors.white,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.left,
             ),
           ),
         ],
