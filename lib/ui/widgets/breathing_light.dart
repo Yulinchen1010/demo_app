@@ -4,9 +4,9 @@ import '../../design/tokens.dart';
 class BreathingLight extends StatefulWidget {
   final HealthLevel level;
   final String label;
-  final Duration period; // 預設 3s 迴圈
-  final bool glow; // 是否開啟外圈發光
-  final double size; // 直徑
+  final Duration period; // \u9810\u8a2d 3s \u8ff4\u5708
+  final bool glow; // \u662f\u5426\u958b\u555f\u5916\u5708\u767c\u5149
+  final double size; // \u76f4\u5f91
 
   const BreathingLight({
     super.key,
@@ -90,7 +90,7 @@ class _BreathingLightState extends State<BreathingLight>
           widget.label,
           style: const TextStyle(
             fontSize: 11,
-            color: HealthColors.label, // 0.7 透明度
+            color: HealthColors.label, // 0.7 \u900f\u660e\u5ea6
             height: 1.1,
           ),
         ),

@@ -1,4 +1,5 @@
-// android/build.gradle.kts（專案層，不是 app 層）
+import org.gradle.api.tasks.Copy
+
 allprojects {
     repositories {
         google()
@@ -10,16 +11,17 @@ tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
 
-tasks.register<org.gradle.api.tasks.Copy>("copyDebugApkToFlutter") {
-    
-    from(layout.buildDirectory.dir("outputs/apk/debug"))
-    include("app-debug.apk")
-  
-    into(layout.buildDirectory.dir("outputs/flutter-apk"))
-}
+val appProject = project(":app")
 
+tasks.register<Copy>("copyDebugApkToFlutter") {
+    val sourceDir = appProject.layout.buildDirectory.dir("outputs/apk/debug")
+    from(sourceDir)
+    include("app-debug.apk")
+
+    val flutterOutputDir = rootDir.resolve("../build/app/outputs/flutter-apk")
+    into(flutterOutputDir)
+}
 
 tasks.matching { it.name == "assembleDebug" }.configureEach {
-    finalizedBy("copyDebugApkToFlutter")
+    finalizedBy(tasks.named("copyDebugApkToFlutter"))
 }
-

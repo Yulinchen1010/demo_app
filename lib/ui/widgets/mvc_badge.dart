@@ -10,9 +10,9 @@ class MvcBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = ((percent ?? 0) as num).clamp(0, 100).toDouble();
     final bg = _bgColorFor(p);
-    final label = percent == null ? '肌力 %MVC：--' : '肌力 %MVC：${p.toStringAsFixed(1)}%';
+    final label = percent == null ? '\u808c\u529b %MVC\uff1a--' : '\u808c\u529b %MVC\uff1a${p.toStringAsFixed(1)}%';
     final ts = updatedAt;
-    final when = ts == null ? '更新時間：--:--:--' : '更新時間：${_hhmmss(ts)}';
+    final when = ts == null ? '\u66f4\u65b0\u6642\u9593\uff1a--:--:--' : '\u66f4\u65b0\u6642\u9593\uff1a${_hhmmss(ts)}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

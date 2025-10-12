@@ -37,7 +37,7 @@ class _TreePainter extends CustomPainter {
     canvas.drawLine(trunkTop, leftShoulder, trunkPaint);
     canvas.drawLine(trunkTop, rightShoulder, trunkPaint);
 
-    // Leaves layout: 3 per side within ±60° sector
+    // Leaves layout: 3 per side within \u00b160\u00b0 sector
     final leftNodes = _fanPositions(
       leftShoulder,
       radius: size.shortestSide * 0.18,
@@ -76,8 +76,8 @@ class _TreePainter extends CustomPainter {
 
     // Label
     final label = v == null
-        ? '未接'
-        : '肌力使用率 ${value.toStringAsFixed(0)}%（${_levelText(value)}）';
+        ? '\u672a\u63a5'
+        : '\u808c\u529b\u4f7f\u7528\u7387 ${value.toStringAsFixed(0)}%\uff08${_levelText(value)}\uff09';
     final tp = TextPainter(
       text: TextSpan(
         text: label,
@@ -85,7 +85,7 @@ class _TreePainter extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
-      ellipsis: '…',
+      ellipsis: '\u2026',
     )..layout(maxWidth: 220);
     final offset = Offset(p.dx - tp.width / 2, p.dy - radius - 14 - tp.height);
 
@@ -124,9 +124,9 @@ class _TreePainter extends CustomPainter {
   }
 
   String _levelText(double v) {
-    if (v <= 20) return '低';
-    if (v <= 60) return '中';
-    return '高';
+    if (v <= 20) return '\u4f4e';
+    if (v <= 60) return '\u4e2d';
+    return '\u9ad8';
   }
 
   @override

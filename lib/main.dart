@@ -1,12 +1,30 @@
 import 'package:flutter/material.dart';
-import 'ui/splash_page.dart';
+import 'package:provider/provider.dart';
+
+import 'data/ble_connection_service.dart';
+import 'data/telemetry_service.dart';
+import 'data/history_repository.dart';
+import 'nav/bottom_nav_controller.dart';
+import 'router/app_router.dart';
 
 void main() {
-  runApp(const FatigueTreeApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => BottomNavController()),
+        ChangeNotifierProvider(create: (_) => BleConnectionService()),
+        ChangeNotifierProvider(create: (_) => TelemetryService()),
+        Provider(create: (_) => HistoryRepository()),
+      ],
+      child: const FatigueTreeApp(),
+    ),
+  );
 }
 
 class FatigueTreeApp extends StatelessWidget {
   const FatigueTreeApp({super.key});
+
+  static const AppRouter _router = AppRouter();
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +45,8 @@ class FatigueTreeApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const SplashPage(),
+      initialRoute: Routes.splash,
+      onGenerateRoute: _router.onGenerateRoute,
     );
   }
 }

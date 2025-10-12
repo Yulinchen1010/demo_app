@@ -54,7 +54,7 @@ class _BreathIndicatorState extends State<BreathIndicator>
   Widget build(BuildContext context) {
     final color = _baseColor;
     final glow = color.withOpacity(.25);
-    const double size = 18; // 16–18px
+    const double size = 18; // 16\u201318px
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -64,7 +64,7 @@ class _BreathIndicatorState extends State<BreathIndicator>
             width: size,
             height: size,
             decoration: BoxDecoration(
-              color: color, // 實心色，避免疊色偏暗
+              color: color, // \u5be6\u5fc3\u8272\uff0c\u907f\u514d\u758a\u8272\u504f\u6697
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
@@ -81,7 +81,7 @@ class _BreathIndicatorState extends State<BreathIndicator>
           widget.label,
           style: const TextStyle(
             fontSize: 12,
-            color: Color(0xD9FFFFFF), // 白 85%
+            color: Color(0xD9FFFFFF), // \u767d 85%
             height: 1.1,
           ),
         ),

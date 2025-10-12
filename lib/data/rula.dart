@@ -51,10 +51,10 @@ class RulaCalculator {
   }
 
   static String _labelFor(int score) {
-    if (score <= 2) return '低';
-    if (score <= 4) return '中';
-    if (score <= 6) return '較高';
-    return '高';
+    if (score <= 2) return '\u4f4e';
+    if (score <= 4) return '\u4e2d';
+    if (score <= 6) return '\u8f03\u9ad8';
+    return '\u9ad8';
   }
 }
 

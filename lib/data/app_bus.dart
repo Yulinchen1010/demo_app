@@ -25,6 +25,8 @@ class AppBus {
   void setSource(DataSource src) => _sourceCtrl.add(src);
   void reconnect() => _reconnectCtrl.add(null);
 
+  bool get isConnected => _lastBtStatus == StreamStatus.connected;
+
   void setBtStatus(StreamStatus status, {String? deviceName}) {
     _lastBtStatus = status;
     if (deviceName != null && deviceName.isNotEmpty) {
@@ -37,7 +39,7 @@ class AppBus {
     _selectedBtName = name.trim();
     if ((_selectedBtName ?? '').isNotEmpty) {
       _lastBtDeviceName = _selectedBtName;
-      // 推送一個狀態事件讓 UI 立即刷新（維持當前狀態）
+      // \u63a8\u9001\u4e00\u500b\u72c0\u614b\u4e8b\u4ef6\u8b93 UI \u7acb\u5373\u5237\u65b0\uff08\u7dad\u6301\u7576\u524d\u72c0\u614b\uff09
       if (!_btStatusCtrl.isClosed) {
         _btStatusCtrl.add(_lastBtStatus ?? StreamStatus.connecting);
       }

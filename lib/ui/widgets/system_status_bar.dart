@@ -26,9 +26,9 @@ class SystemStatusBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          BreathingLight(level: mcu, label: 'MCU 連線'),
-          BreathingLight(level: cloud, label: '雲端暫停'),
-          BreathingLight(level: uplink, label: '上傳狀態'),
+          BreathingLight(level: mcu, label: 'MCU \u9023\u7dda'),
+          BreathingLight(level: cloud, label: '\u96f2\u7aef\u66ab\u505c'),
+          BreathingLight(level: uplink, label: '\u4e0a\u50b3\u72c0\u614b'),
         ],
       ),
     );

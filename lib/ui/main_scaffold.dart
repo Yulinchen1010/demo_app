@@ -1,34 +1,46 @@
 import 'package:flutter/material.dart';
-import 'pages/connect_page.dart';
-import 'pages/realtime_page.dart';
-import 'pages/history_page.dart';
+import 'package:provider/provider.dart';
 
-class MainScaffold extends StatefulWidget {
+import '../nav/bottom_nav_controller.dart';
+import 'pages/connect_page.dart';
+import 'pages/history_page.dart';
+import 'pages/live_monitor_page.dart';
+
+class MainScaffold extends StatelessWidget {
   const MainScaffold({super.key});
 
   @override
-  State<MainScaffold> createState() => _MainScaffoldState();
-}
-
-class _MainScaffoldState extends State<MainScaffold> {
-  int _index = 0;
-
-  @override
   Widget build(BuildContext context) {
-    final pages = const [ConnectPage(), RealtimePage(), HistoryPage()];
+    final idx = context.watch<BottomNavController>().index;
     return Scaffold(
-      body: SafeArea(child: pages[_index]),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF1A1A1A),
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.settings_bluetooth), label: '連線'),
-          NavigationDestination(icon: Icon(Icons.speed), label: '即時監測'),
-          NavigationDestination(icon: Icon(Icons.history), label: '歷史資料'),
+      body: SafeArea(
+        child: IndexedStack(
+          index: idx,
+          children: const [
+            ConnectPage(),
+            LiveMonitorPage(),
+            HistoryPage(),
+          ],
+        ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: idx,
+        onTap: (i) => context.read<BottomNavController>().setIndex(i),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_bluetooth),
+            label: '\u9023\u7dda',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.speed),
+            label: '\u5373\u6642\u76e3\u6e2c',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: '\u6b77\u53f2\u8cc7\u6599',
+          ),
         ],
       ),
     );
   }
 }
-

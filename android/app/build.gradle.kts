@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.Copy
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -46,4 +48,16 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+}
+
+val copyDebugApkToFlutter by tasks.registering(Copy::class) {
+    from(layout.buildDirectory.dir("outputs/apk/debug"))
+    include("app-debug.apk")
+    into(rootProject.rootDir.resolve("../build/app/outputs/flutter-apk"))
+}
+
+tasks.configureEach {
+    if (name == "assembleDebug") {
+        finalizedBy(copyDebugApkToFlutter)
+    }
 }

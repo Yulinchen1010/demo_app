@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../data/models.dart';
 import 'info_sheets.dart';
 
@@ -12,13 +12,13 @@ class RulaBadge extends StatelessWidget {
     final s = score;
     final bg = _bgColorFor(s?.score ?? 0);
     final label = s == null
-        ? '姿勢風險分數（RULA）：--'
-        : '姿勢風險分數（RULA）：${s.score}${s.riskLabel != null ? '（${s.riskLabel}）' : ''}';
+        ? '\u59ff\u52e2\u98a8\u96aa\u5206\u6578\uff08RULA\uff09\uff1a--'
+        : '\u59ff\u52e2\u98a8\u96aa\u5206\u6578\uff08RULA\uff09\uff1a${s.score}${s.riskLabel != null ? '\uff08${s.riskLabel}\uff09' : ''}';
 
     final ts = updatedAt;
     final when = ts == null
-        ? '更新時間：--:--:--'
-        : '更新時間：${_hhmmss(ts)}';
+        ? '\u66f4\u65b0\u6642\u9593\uff1a--:--:--'
+        : '\u66f4\u65b0\u6642\u9593\uff1a${_hhmmss(ts)}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,3 +64,4 @@ class RulaBadge extends StatelessWidget {
     return '$h:$m:$s';
   }
 }
+

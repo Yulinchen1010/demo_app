@@ -80,7 +80,7 @@ class _FatigueLightState extends State<FatigueLight> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                '最後更新: ' + _fmt(ts),
+                '\u6700\u5f8c\u66f4\u65b0: ' + _fmt(ts),
                 style: Theme.of(context).textTheme.labelSmall,
               ),
             ),
@@ -158,11 +158,11 @@ class _FatigueLightState extends State<FatigueLight> {
     if (risk <= 0) return '';
     switch (risk) {
       case 3:
-        return '高風險  請暫停/改善';
+        return '\u9ad8\u98a8\u96aa  \u8acb\u66ab\u505c/\u6539\u5584';
       case 2:
-        return '中風險  請留意';
+        return '\u4e2d\u98a8\u96aa  \u8acb\u7559\u610f';
       case 1:
-        return '低風險  可持續工作';
+        return '\u4f4e\u98a8\u96aa  \u53ef\u6301\u7e8c\u5de5\u4f5c';
       default:
         return '';
     }

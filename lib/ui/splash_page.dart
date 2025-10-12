@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'main_scaffold.dart';
+
+import '../router/app_router.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -16,9 +17,7 @@ class _SplashPageState extends State<SplashPage> {
     super.initState();
     _navTimer = Timer(const Duration(milliseconds: 900), () {
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainScaffold()),
-      );
+      Navigator.of(context).pushReplacementNamed(Routes.main);
     });
   }
 
