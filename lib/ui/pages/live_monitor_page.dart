@@ -86,7 +86,7 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
     final bool hasData =
         context.select<TelemetryService, bool>((t) => t.hasFreshData);
     final Size size = MediaQuery.of(context).size;
-    final double computedHeight = size.height * 0.38;
+    final double computedHeight = size.height * 0.28;
     final double chartHeight = computedHeight < 200
         ? 200
         : (computedHeight > 320 ? 320 : computedHeight);
@@ -411,60 +411,71 @@ class _MetricInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A212B),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onInfo,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x1A101822), blurRadius: 24, offset: Offset(0, 14)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-         Row(
-           children: [
-              Icon(icon, size: 20, color: Colors.white70),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    letterSpacing: 0.3,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A212B),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x1A101822),
+                  blurRadius: 24,
+                  offset: Offset(0, 14)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 20, color: Colors.white70),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
                   ),
+                  IconButton(
+                    onPressed: onInfo,
+                    icon: const Icon(Icons.info_outline,
+                        size: 20, color: Colors.white70),
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.4,
                 ),
               ),
-              IconButton(
-                onPressed: onInfo,
-                icon: const Icon(Icons.info_outline,
-                    size: 20, color: Colors.white70),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: 0.4,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-          ),
-        ],
+        ),
       ),
     );
   }
