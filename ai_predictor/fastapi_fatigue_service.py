@@ -133,9 +133,9 @@ def get_worker_data(worker_id: str) -> pd.DataFrame:
 
 def calculate_risk_level(mvc_change: float) -> tuple:
     """根據MVC變化量計算風險等級"""
-    if mvc_change >= 30:
+    if mvc_change >= 40:
         return "高度", 3, "#e74c3c"
-    elif mvc_change >= 15:
+    elif mvc_change >= 20:
         return "中度", 2, "#f39c12"
     else:
         return "低度", 1, "#27ae60"
