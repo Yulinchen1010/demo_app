@@ -86,21 +86,28 @@ class CloudStatusSubscriber {
 
     try {
 
-      final res = await CloudApi.status(id);
+      // 直接使用 process API，同時獲取處理結果
+      final res = await CloudApi.process(
+
+        workerId: id,
+
+        percentMvc: 0, // 用 0 表示只取狀態不上傳數據
+
+        augmentHigh: true,
+
+      );
+
+      // 解析回傳的風險資訊
 
       final data = CloudStatusData(
 
         workerId: id,
 
-        label: (res['fatigue_risk']?.toString() ?? '').isNotEmpty
+        label: res['status']?.toString() ?? '\u672a\u77e5',
 
-            ? res['fatigue_risk'].toString()
+        riskLevel: 1, // 簡化風險等級（1=綠）
 
-            : '\u672a\u77e5',
-
-        riskLevel: (res['risk_level'] is num) ? (res['risk_level'] as num).toInt() : 0,
-
-        riskColor: res['risk_color']?.toString() ?? '#27ae60',
+        riskColor: '#27ae60', // 預設綠色
 
         ts: DateTime.now(),
 

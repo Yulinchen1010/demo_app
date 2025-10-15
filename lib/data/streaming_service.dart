@@ -160,12 +160,15 @@ class StreamingService {
       if (!shouldByScore && !shouldByTime) return;
       _lastUploadedRulaScore = s.score;
       _lastRulaUploadAt = now;
-      await CloudApi.uploadRula(
+      // 暫時不上傳 RULA 分數，因為新的 API 不支援
+      // TODO: 如果需要，可以考慮將 RULA 分數作為額外參數傳給 process API
+      /*await CloudApi.process(
         workerId: CloudApi.workerId,
-        score: s.score,
-        riskLabel: s.riskLabel,
+        percentMvc: 0, // 僅用於表示狀態更新
         timestamp: now,
-      );
+        rulaScore: s.score,
+        rulaRiskLabel: s.riskLabel,
+      );*/
     } catch (_) {
       // ignore upload errors
     }

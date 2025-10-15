@@ -9,13 +9,13 @@ class RulaCalculator {
     final upper = upperL > upperR ? upperL : upperR;
 
     // Assume neutral for missing parts per requirement
-    const forearm = 1;
-    const wrist = 1;
+    const forearm = 0;
+    const wrist = 0;
     final A = (upper + forearm + wrist).clamp(0, 7);
 
     final trunk = _scoreTrunk(trunkDeg ?? 0.0);
-    const neck = 1;
-    const legs = 1;
+    const neck = 0;
+    const legs = 0;
     final B = (trunk + neck + legs).clamp(0, 7);
 
     final total = A + B;
@@ -25,28 +25,32 @@ class RulaCalculator {
   }
 
   static int _scoreUpperArm(double deg) {
-    final a = (deg).abs();
-    if (a <= 20) return 1;
-    if (a <= 45) return 2;
-    if (a <= 90) return 3;
-    return 4;
+    final a = deg.abs();
+    if (a <= 10) return 1;
+    if (a <= 30) return 2;
+    if (a <= 45) return 3;
+    if (a <= 60) return 4;
+    if (a <= 90) return 5;
+    return 6;
   }
 
   static int _scoreTrunk(double deg) {
-    final a = (deg).abs();
+    final a = deg.abs();
     if (a <= 5) return 1;
-    if (a <= 20) return 2;
-    if (a <= 60) return 3;
-    return 4;
+    if (a <= 15) return 2;
+    if (a <= 30) return 3;
+    if (a <= 45) return 4;
+    if (a <= 60) return 5;
+    return 6;
   }
 
   static int _mapABToFinal(int total) {
     if (total <= 2) return 1;
     if (total <= 4) return 2;
     if (total <= 6) return 3;
-    if (total <= 8) return 4;
-    if (total <= 10) return 5;
-    if (total <= 12) return 6;
+    if (total <= 7) return 4;
+    if (total <= 9) return 5;
+    if (total <= 11) return 6;
     return 7;
   }
 

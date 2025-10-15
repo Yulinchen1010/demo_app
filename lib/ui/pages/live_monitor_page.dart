@@ -81,8 +81,7 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
   Widget build(BuildContext context) {
     final double? rula = _rulaScore;
     final double? mvc = _mvcPercent;
-    final bool isConnected =
-        context.watch<BleConnectionService>().isConnected;
+    final bool isConnected = context.watch<BleConnectionService>().isConnected;
     final bool hasData =
         context.select<TelemetryService, bool>((t) => t.hasFreshData);
     final Size size = MediaQuery.of(context).size;
@@ -95,7 +94,8 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
       backgroundColor: const Color(0xFF0F141A),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding:
+              const EdgeInsets.only(left: 16, right: 16, top: 0, bottom: 4),
           children: [
             FatigueBeaconSection(
               level: hasData ? _riskLevel : null,
@@ -104,8 +104,10 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
                 MaterialPageRoute(builder: (_) => const FatigueDetailPage()),
               ),
               onExplainTap: () => showFatigueBeaconHelp(context),
+              rula: rula,
+              mvc: mvc,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -130,7 +132,7 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             _ChartCard(
               child: SizedBox(
                 height: chartHeight,
@@ -377,8 +379,7 @@ class GoConnectBanner extends StatelessWidget {
         ),
         child: Row(
           children: const [
-            Icon(Icons.bluetooth_disabled,
-                size: 18, color: Color(0xFFAAB2BD)),
+            Icon(Icons.bluetooth_disabled, size: 18, color: Color(0xFFAAB2BD)),
             SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -418,7 +419,7 @@ class _MetricInfoCard extends StatelessWidget {
         onTap: onInfo,
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: const Color(0xFF1A212B),
             borderRadius: BorderRadius.circular(20),
@@ -435,7 +436,7 @@ class _MetricInfoCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(icon, size: 20, color: Colors.white70),
+                  Icon(icon, size: 18, color: Colors.white70),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -458,17 +459,17 @@ class _MetricInfoCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Text(
                 value,
                 style: const TextStyle(
-                  fontSize: 34,
+                  fontSize: 30,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                   letterSpacing: 0.4,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 subtitle,
                 style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),

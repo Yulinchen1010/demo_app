@@ -8,7 +8,7 @@ import '../../data/cloud_subscriber.dart';
 class FatigueLight extends StatefulWidget {
   final CloudStatusSubscriber subscriber;
   final double size; // single light diameter
-  const FatigueLight({super.key, required this.subscriber, this.size = 64});
+  const FatigueLight({super.key, required this.subscriber, this.size = 96});
 
   @override
   State<FatigueLight> createState() => _FatigueLightState();
@@ -18,7 +18,7 @@ class _FatigueLightState extends State<FatigueLight> {
   final AudioPlayer _player = AudioPlayer();
   CloudStatusData? _last;
   StreamSubscription<CloudStatusData>? _sub;
-  DateTime? _lastAlert;
+  bool _alertLooping = false;
 
   @override
   void initState() {
@@ -29,6 +29,9 @@ class _FatigueLightState extends State<FatigueLight> {
   @override
   void dispose() {
     _sub?.cancel();
+    _alertLooping = false;
+    _player.stop();
+    _player.dispose();
     super.dispose();
   }
 
@@ -36,6 +39,8 @@ class _FatigueLightState extends State<FatigueLight> {
   Widget build(BuildContext context) {
     final risk = _last?.riskLevel ?? 0;
     final ts = _last?.ts;
+
+    _updateAlertLoop(risk);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -105,7 +110,6 @@ class _FatigueLightState extends State<FatigueLight> {
       children.add(_light(colors[i], on, diameter));
       if (i != 4) children.add(SizedBox(width: spacing));
     }
-    if (active == 5) _alertOnce();
     return children;
   }
 
@@ -130,13 +134,37 @@ class _FatigueLightState extends State<FatigueLight> {
     );
   }
 
-  Future<void> _alertOnce() async {
-    final now = DateTime.now();
-    if (_lastAlert != null && now.difference(_lastAlert!).inSeconds < 10) return; // cooldown
-    _lastAlert = now;
+  void _updateAlertLoop(int risk) {
+    if (risk >= 3) {
+      unawaited(_startAlertLoop());
+    } else {
+      unawaited(_stopAlertLoop());
+    }
+  }
+
+  Future<void> _startAlertLoop() async {
+    if (_alertLooping) return;
+    _alertLooping = true;
     try {
+      await _player.setReleaseMode(ReleaseMode.loop);
       await _player.play(AssetSource('audio/beep.wav'));
+    } catch (_) {
+      _alertLooping = false;
+      return;
+    }
+    await _triggerFeedback();
+  }
+
+  Future<void> _stopAlertLoop() async {
+    if (!_alertLooping) return;
+    _alertLooping = false;
+    try {
+      await _player.stop();
+      await _player.setReleaseMode(ReleaseMode.release);
     } catch (_) {}
+  }
+
+  Future<void> _triggerFeedback() async {
     try {
       await HapticFeedback.heavyImpact();
       await Future.delayed(const Duration(milliseconds: 180));

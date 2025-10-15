@@ -56,6 +56,13 @@ class BluetoothStreamingService {
         _statusCtrl.add(StreamStatus.error);
         return;
       }
+      final alreadyConnected = await _bluetooth.isConnected ?? false;
+      if (alreadyConnected) {
+        try {
+          await _bluetooth.disconnect();
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
       _conn = await classic.BluetoothConnection.toAddress(dev.address);
       _statusCtrl.add(StreamStatus.connected);
       _listen();
@@ -189,7 +196,7 @@ class BluetoothStreamingService {
       await CloudApi.uploadRula(
         workerId: CloudApi.workerId,
         score: s.score,
-        riskLabel: s.riskLabel,
+        riskLabel: s.riskLabel ?? "",
         timestamp: now,
       );
     } catch (_) {

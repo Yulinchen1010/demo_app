@@ -33,99 +33,49 @@ class CloudApi {
     _workerId = id.trim();
   }
 
-  static Future<Map<String, dynamic>> upload({
+  static Future<Map<String, dynamic>> process({
     required String workerId,
     required double percentMvc,
+    bool augmentHigh = true,
     DateTime? timestamp,
   }) async {
-    final body = {
+    final formData = FormData.fromMap({
       'worker_id': workerId,
-      'percent_mvc': percentMvc,
+      'augment_high': augmentHigh,
       if (timestamp != null) 'timestamp': timestamp.toUtc().toIso8601String(),
-    };
+    });
     try {
-      final res = await _dio.post('/upload', data: jsonEncode(body));
-      _emit(CloudEvent('upload', true, 'worker=$workerId mvc=$percentMvc'));
+      final res = await _dio.post('/process', data: formData);
+      _emit(CloudEvent('process', true, 'worker=$workerId mvc=$percentMvc'));
       return Map<String, dynamic>.from(res.data as Map);
     } catch (e) {
-      _emit(CloudEvent('upload', false, e.toString()));
+      _emit(CloudEvent('process', false, e.toString()));
       rethrow;
     }
   }
 
-  static Future<Map<String, dynamic>> uploadRula({
+  static Future<Map<String, dynamic>> train({
     required String workerId,
-    required int score,
-    String? riskLabel,
+    required double percentMvc,
+    bool augmentHigh = true,
     DateTime? timestamp,
   }) async {
-    final body = {
+    final formData = FormData.fromMap({
       'worker_id': workerId,
-      'rula': {
-        'score': score,
-        if (riskLabel != null && riskLabel.isNotEmpty) 'risk_label': riskLabel,
-      },
+      'augment_high': augmentHigh,
       if (timestamp != null) 'timestamp': timestamp.toUtc().toIso8601String(),
-    };
+    });
     try {
-      final res = await _dio.post('/upload_rula', data: jsonEncode(body));
-      _emit(CloudEvent('upload_rula', true, 'worker=$workerId score=$score'));
+      final res = await _dio.post('/train', data: formData);
+      _emit(CloudEvent('train', true, 'worker=$workerId mvc=$percentMvc'));
       return Map<String, dynamic>.from(res.data as Map);
     } catch (e) {
-      _emit(CloudEvent('upload_rula', false, e.toString()));
+      _emit(CloudEvent('train', false, e.toString()));
       rethrow;
     }
   }
 
-  static Future<int> uploadBatch(List<Map<String, dynamic>> items) async {
-    final body = {'data': items};
-    try {
-      final res = await _dio.post('/upload_batch', data: jsonEncode(body));
-      final map = Map<String, dynamic>.from(res.data as Map);
-      final n = (map['uploaded'] as num?)?.toInt() ?? 0;
-      _emit(CloudEvent('upload_batch', true, 'uploaded=$n'));
-      return n;
-    } catch (e) {
-      _emit(CloudEvent('upload_batch', false, e.toString()));
-      rethrow;
-    }
-  }
-
-  static Future<Map<String, dynamic>> status(String workerId) async {
-    try {
-      final res = await _dio.get('/status/$workerId');
-      _emit(CloudEvent('status', true, 'worker=$workerId'));
-      return Map<String, dynamic>.from(res.data as Map);
-    } catch (e) {
-      _emit(CloudEvent('status', false, e.toString()));
-      rethrow;
-    }
-  }
-
-  static Future<Map<String, dynamic>> predict(String workerId,
-      {int horizon = 120}) async {
-    try {
-      final res = await _dio.get('/predict/$workerId',
-          queryParameters: {'horizon': horizon});
-      _emit(CloudEvent('predict', true, 'worker=$workerId horizon=$horizon'));
-      return Map<String, dynamic>.from(res.data as Map);
-    } catch (e) {
-      _emit(CloudEvent('predict', false, e.toString()));
-      rethrow;
-    }
-  }
-
-  static Future<List<String>> workers() async {
-    try {
-      final res = await _dio.get('/workers');
-      final list = (res.data as List).cast<dynamic>();
-      _emit(CloudEvent('workers', true, 'count=${list.length}'));
-      return list.map((e) => e.toString()).toList();
-    } catch (e) {
-      _emit(CloudEvent('workers', false, e.toString()));
-      rethrow;
-    }
-  }
+  // 移除 status、predict 和 workers endpoints，因為新的 FastAPI 服務不支援這些功能
 
   // Events
   static final _eventsCtrl = StreamController<CloudEvent>.broadcast();
@@ -138,13 +88,33 @@ class CloudApi {
 
   static Future<Map<String, dynamic>> health() async {
     try {
-      final res = await _dio.get('/health');
+      final res = await _dio.get('/healthz');
       _emit(CloudEvent('health', true, 'ok'));
       return Map<String, dynamic>.from(res.data as Map);
     } catch (e) {
       _emit(CloudEvent('health', false, e.toString()));
       rethrow;
     }
+  }
+
+  // 在此處新增靜態成員與方法，用於上傳 RULA 與 MVC 資料
+  static Future<void> uploadRula({
+    required String workerId,
+    required int score,
+    required String riskLabel,
+    required DateTime timestamp,
+  }) async {
+    // TODO: 實作上傳 RULA 資料的邏輯
+    return;
+  }
+
+  static Future<void> upload({
+    required String workerId,
+    required double percentMvc,
+    required DateTime timestamp,
+  }) async {
+    // TODO: 實作上傳 MVC 資料的邏輯
+    return;
   }
 }
 
