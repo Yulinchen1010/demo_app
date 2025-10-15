@@ -2,15 +2,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 import sqlite3
 import pandas as pd
 import numpy as np
 import os
-import joblib
 from datetime import datetime, timedelta, timezone
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
 import io
 import matplotlib
 matplotlib.use('Agg')
@@ -18,6 +15,14 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 import warnings
 warnings.filterwarnings('ignore')
+
+from fatigue_pipeline import (
+    HORIZON_S,
+    PipelineArtifacts,
+    prepare_pipeline_from_csv,
+    predict_high_fatigue_probability,
+    predict_future_level,
+)
 
 # 設定中文字體
 def setup_chinese_font():
@@ -45,8 +50,6 @@ except Exception:
 
 # ==================== 初始設定 ====================
 DB_PATH = os.getenv("DB_PATH", "fatigue_data.db")
-MODEL_PATH = os.getenv("MODEL_PATH", "models/fatigue_regressor.pkl")
-os.makedirs("models", exist_ok=True)
 
 # 設定時區：台灣時間 (UTC+8)
 TZ_TAIWAN = timezone(timedelta(hours=8))
@@ -55,7 +58,7 @@ def get_taiwan_time():
     """取得台灣當前時間"""
     return datetime.now(TZ_TAIWAN)
 
-app = FastAPI(title="疲勞預測系統", version="4.0")
+app = FastAPI(title="疲勞預測系統", version="5.0")
 
 # CORS 設定（允許 APP 連接）
 app.add_middleware(
@@ -111,34 +114,31 @@ def init_db():
 
 init_db()
 
-# ==================== 載入/訓練模型 ====================
-def load_or_train_model():
-    if os.path.exists(MODEL_PATH):
-        print("✅ 載入已訓練模型")
-        return joblib.load(MODEL_PATH)
-    
-    print("🔧 訓練新模型...")
-    n = 3000
-    rng = np.random.RandomState(42)
-    percent_mvc = rng.uniform(0, 100, size=n)
-    mvc_change = rng.uniform(-20, 30, size=n)  # MVC變化量
-    time_elapsed = rng.uniform(0, 240, size=n)  # 經過時間(分鐘)
-    
-    X = np.vstack([percent_mvc, mvc_change, time_elapsed]).T
-    # 風險分數: MVC增加越多，風險越高
-    y = mvc_change * 2 + time_elapsed * 0.1 + rng.normal(0, 5, n)
-    y = np.clip(y, -20, 100)
-    
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = RandomForestRegressor(n_estimators=50, random_state=42)
-    model.fit(X_train, y_train)
-    
-    joblib.dump(model, MODEL_PATH)
-    print("✅ 模型訓練完成")
-    return model
+# ==================== 載入疲勞模擬資料與模型 ====================
+SIM_CSV_PATH = os.getenv(
+    "SIM_CSV_PATH",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "fatigue_simulated_with_recovery.csv")),
+)
 
-# 初始化模型
-MODEL = load_or_train_model()
+PIPELINE_ARTIFACTS: Optional[PipelineArtifacts]
+PIPELINE_FEATURES_VALID: pd.DataFrame
+PIPELINE_FEATURE_COLUMNS: List[str]
+PIPELINE_REPORTS: Dict[str, str]
+
+try:
+    PIPELINE_ARTIFACTS = prepare_pipeline_from_csv(SIM_CSV_PATH)
+    PIPELINE_FEATURES_VALID = PIPELINE_ARTIFACTS.features.loc[
+        PIPELINE_ARTIFACTS.valid_feature_mask
+    ]
+    PIPELINE_FEATURE_COLUMNS = PIPELINE_ARTIFACTS.feature_columns
+    PIPELINE_REPORTS = PIPELINE_ARTIFACTS.classification_reports
+    print(f"✅ 已載入疲勞模擬資料: {SIM_CSV_PATH}")
+except Exception as exc:
+    PIPELINE_ARTIFACTS = None
+    PIPELINE_FEATURES_VALID = pd.DataFrame()
+    PIPELINE_FEATURE_COLUMNS = []
+    PIPELINE_REPORTS = {}
+    print(f"⚠️ 無法載入疲勞模擬資料: {exc}")
 
 # ==================== 輔助函數 ====================
 def get_worker_data(worker_id: str) -> pd.DataFrame:
@@ -154,6 +154,98 @@ def get_worker_data(worker_id: str) -> pd.DataFrame:
 
 # RULA simplified scoring removed: computed client-side in Flutter app.
 
+
+def list_pipeline_sessions() -> List[str]:
+    if PIPELINE_ARTIFACTS is None:
+        return []
+    return sorted(PIPELINE_ARTIFACTS.processed["session_id"].unique())
+
+
+def get_pipeline_session(session_id: str) -> pd.DataFrame:
+    if PIPELINE_ARTIFACTS is None:
+        return pd.DataFrame()
+    df = PIPELINE_ARTIFACTS.processed
+    return df[df["session_id"] == session_id].sort_values("timestamp")
+
+
+def get_pipeline_feature_row(session_id: str) -> Optional[pd.Series]:
+    if PIPELINE_ARTIFACTS is None or PIPELINE_FEATURES_VALID.empty:
+        return None
+    df_feat = PIPELINE_FEATURES_VALID
+    session_feat = df_feat[df_feat["session_id"] == session_id]
+    if session_feat.empty:
+        return None
+    session_feat = session_feat.sort_values("timestamp")
+    return session_feat.iloc[-1]
+
+
+def summarize_pipeline_prediction(session_id: str) -> Optional[Dict[str, object]]:
+    session_df = get_pipeline_session(session_id)
+    if session_df.empty:
+        return None
+
+    latest_row = session_df.iloc[-1]
+    feature_row = get_pipeline_feature_row(session_id)
+    if feature_row is None:
+        return {
+            "session_id": session_id,
+            "message": "有效特徵不足，無法進行預測",
+            "latest": {
+                "timestamp": str(latest_row["timestamp"]),
+                "mvc_percent": float(latest_row["mvc_percent"]),
+                "E_norm": float(latest_row["E_norm"]),
+                "level": latest_row["level"],
+                "trend": latest_row["trend"],
+                "color": latest_row["color"],
+                "blink": latest_row["blink"],
+            },
+        }
+
+    X = feature_row[PIPELINE_FEATURE_COLUMNS].to_frame().T
+    proba = predict_high_fatigue_probability(PIPELINE_ARTIFACTS.models, X)
+    future_level = predict_future_level(PIPELINE_ARTIFACTS.models, X)
+
+    return {
+        "session_id": session_id,
+        "latest": {
+            "timestamp": str(latest_row["timestamp"]),
+            "mvc_percent": float(latest_row["mvc_percent"]),
+            "E_norm": float(latest_row["E_norm"]),
+            "level": latest_row["level"],
+            "trend": latest_row["trend"],
+            "color": latest_row["color"],
+            "blink": latest_row["blink"],
+        },
+        "predictions": {
+            **proba,
+            "future_level": future_level,
+        },
+    }
+
+
+def compute_pipeline_prediction_table(session_id: str) -> pd.DataFrame:
+    if PIPELINE_ARTIFACTS is None or PIPELINE_FEATURES_VALID.empty:
+        return pd.DataFrame()
+
+    session_feat = PIPELINE_FEATURES_VALID[
+        PIPELINE_FEATURES_VALID["session_id"] == session_id
+    ].sort_values("timestamp")
+    if session_feat.empty:
+        return pd.DataFrame()
+
+    X = session_feat[PIPELINE_FEATURE_COLUMNS]
+    out = session_feat[["timestamp"]].copy()
+
+    if PIPELINE_ARTIFACTS.models.binary_logistic is not None:
+        out["logistic_high_prob"] = PIPELINE_ARTIFACTS.models.binary_logistic.predict_proba(X)[:, 1]
+    if PIPELINE_ARTIFACTS.models.binary_hgb is not None:
+        out["hgb_high_prob"] = PIPELINE_ARTIFACTS.models.binary_hgb.predict_proba(X)[:, 1]
+    if PIPELINE_ARTIFACTS.models.trinary_hgb is not None:
+        out["future_level"] = PIPELINE_ARTIFACTS.models.trinary_hgb.predict(X)
+
+    return out
+
+
 def calculate_risk_level(mvc_change: float) -> tuple:
     """根據MVC變化量計算風險等級"""
     if mvc_change >= 30:
@@ -164,10 +256,11 @@ def calculate_risk_level(mvc_change: float) -> tuple:
         return "低度", 1, "#27ae60"
 
 def predict_fatigue_risk(current_mvc: float, initial_mvc: float, time_elapsed: float) -> float:
-    """預測未來的MVC變化(風險分數)"""
+    """簡化版預測：以當前 MVC 變化量與時間推估未來風險。"""
     mvc_change = current_mvc - initial_mvc
-    X = np.array([[current_mvc, mvc_change, time_elapsed]])
-    return float(MODEL.predict(X)[0])
+    # 假設每分鐘 MVC 漸進上升 0.05%，作為保守預估。
+    drift = 0.05 * time_elapsed
+    return float(np.clip(mvc_change + drift, -20, 100))
 
 # ==================== API 端點 ====================
 
@@ -175,8 +268,8 @@ def predict_fatigue_risk(current_mvc: float, initial_mvc: float, time_elapsed: f
 def home():
     return {
         "service": "疲勞預測系統",
-        "version": "4.0",
-        "description": "基於 MVC 百分比的疲勞風險監測",
+        "version": "5.0",
+        "description": "基於 MVC/RULA 與疲勞累積模型的預測服務",
         "endpoints": {
             "上傳單筆": "POST /upload",
             "批次上傳": "POST /upload_batch",
@@ -187,9 +280,51 @@ def home():
             "生成測試": "POST /test/generate/{worker_id}?count=10",
             "清空資料": "DELETE /clear/{worker_id}",
             "系統健康": "GET /health",
-            "API文件": "GET /docs"
+            "API文件": "GET /docs",
+            "模擬場景清單": "GET /dataset/sessions",
+            "模擬狀態": "GET /dataset/session/{session_id}",
+            "模擬預測": "GET /dataset/predict/{session_id}",
+            "模型評估": "GET /dataset/reports",
         }
     }
+
+
+@app.get('/dataset/sessions')
+def dataset_sessions():
+    sessions = list_pipeline_sessions()
+    return {"sessions": sessions, "count": len(sessions)}
+
+
+@app.get('/dataset/session/{session_id}')
+def dataset_session_detail(session_id: str, limit: int = 180):
+    df = get_pipeline_session(session_id)
+    if df.empty:
+        raise HTTPException(404, f"找不到模擬場景 {session_id}")
+
+    df_out = df if limit <= 0 else df.tail(limit)
+    return {
+        "session_id": session_id,
+        "records": df_out.to_dict(orient='records'),
+        "total": len(df),
+    }
+
+
+@app.get('/dataset/predict/{session_id}')
+def dataset_prediction(session_id: str):
+    summary = summarize_pipeline_prediction(session_id)
+    if summary is None:
+        raise HTTPException(404, f"找不到模擬場景 {session_id}")
+    history_df = compute_pipeline_prediction_table(session_id)
+    if not history_df.empty:
+        summary["history"] = history_df.to_dict(orient='records')
+    return summary
+
+
+@app.get('/dataset/reports')
+def dataset_reports():
+    if not PIPELINE_REPORTS:
+        raise HTTPException(503, "模型尚未成功訓練")
+    return {"reports": PIPELINE_REPORTS}
 
 @app.post('/upload_rula')
 def upload_rula(item: RulaData):
@@ -264,30 +399,41 @@ def upload_batch(batch: BatchUpload):
 @app.get('/status/{worker_id}')
 def get_status(worker_id: str):
     """取得工作者即時狀態"""
+
+    summary = summarize_pipeline_prediction(worker_id)
+    if summary is not None:
+        session_df = get_pipeline_session(worker_id)
+        latest = summary["latest"]
+        return {
+            "worker_id": worker_id,
+            "source": "simulation",
+            "timestamp": latest["timestamp"],
+            "mvc_percent": latest["mvc_percent"],
+            "E_norm": latest["E_norm"],
+            "fatigue_level": latest["level"],
+            "trend": latest["trend"],
+            "led": {
+                "color": latest["color"],
+                "blink": latest["blink"],
+            },
+            "predictions": summary.get("predictions"),
+            "message": summary.get("message"),
+            "data_count": int(len(session_df)),
+        }
+
     df = get_worker_data(worker_id)
     if df.empty:
         raise HTTPException(404, f"找不到 {worker_id} 的資料")
-    
-    # 最新數據
+
     latest = df.iloc[0]
     current_mvc = float(latest['percent_mvc'])
-    
-    # 初始數據 (第一筆資料)
     initial = df.iloc[-1]
     initial_mvc = float(initial['percent_mvc'])
-    
-    # 計算MVC變化量
     mvc_change = current_mvc - initial_mvc
-    
-    # 計算經過時間(分鐘)
     time_diff = (latest['timestamp'] - initial['timestamp']).total_seconds() / 60
-    
-    # 風險等級評估
     risk_label, risk_level, risk_color = calculate_risk_level(mvc_change)
-    
-    # 計算平均MVC (最近10筆)
     recent_avg = df.head(10)['percent_mvc'].mean()
-    
+
     return {
         "worker_id": worker_id,
         "current_mvc": round(current_mvc, 2),
@@ -315,34 +461,41 @@ def get_recommendation(risk_level: int, mvc_change: float) -> str:
 
 @app.get('/predict/{worker_id}')
 def predict(worker_id: str, horizon: int = 120):
-    """取得未來MVC變化預測 (JSON)"""
+    """取得未來疲勞風險預測 (JSON)"""
+
+    summary = summarize_pipeline_prediction(worker_id)
+    if summary is not None:
+        history_df = compute_pipeline_prediction_table(worker_id)
+        if not history_df.empty:
+            summary["history"] = history_df.to_dict(orient='records')
+        summary["horizon_minutes"] = int(HORIZON_S / 60)
+        summary["note"] = "預測 30 分鐘內是否會進入高疲勞"
+        return summary
+
     df = get_worker_data(worker_id)
     if df.empty:
         raise HTTPException(404, f"找不到 {worker_id} 的資料")
-    
+
     latest = df.iloc[0]
     initial = df.iloc[-1]
-    
     current_mvc = float(latest['percent_mvc'])
     initial_mvc = float(initial['percent_mvc'])
     current_time = (latest['timestamp'] - initial['timestamp']).total_seconds() / 60
-    
-    # 生成未來預測
+
     predictions = []
     for t in range(0, min(horizon, 240) + 1, 10):
         future_time = current_time + t
         predicted_risk = predict_fatigue_risk(current_mvc, initial_mvc, future_time)
         predicted_mvc = initial_mvc + predicted_risk
-        
-        risk_label, risk_level, _ = calculate_risk_level(predicted_risk)
-        
+        risk_label, _, _ = calculate_risk_level(predicted_risk)
+
         predictions.append({
             "minutes_from_now": t,
             "predicted_mvc": round(predicted_mvc, 2),
             "mvc_change": round(predicted_risk, 2),
             "risk_level": risk_label
         })
-    
+
     return {
         "worker_id": worker_id,
         "current_state": {
@@ -534,17 +687,19 @@ def health():
     
     return {
         "status": "healthy",
-        "model_loaded": MODEL is not None,
+        "pipeline_loaded": PIPELINE_ARTIFACTS is not None,
+        "simulated_sessions": len(list_pipeline_sessions()),
+        "model_reports": PIPELINE_REPORTS,
         "total_records": total,
         "total_workers": workers,
         "database": DB_PATH,
-        "version": "4.0"
+        "version": "5.0",
     }
 
 if __name__ == '__main__':
-    print("🚀 疲勞預測系統已啟動 (v4.0)")
+    print("🚀 疲勞預測系統已啟動 (v5.0)")
     print("📍 本機: http://localhost:8000")
     print("📍 文件: http://localhost:8000/docs")
-    print("💡 系統特點: 基於 MVC 變化量的疲勞風險評估")
-    print("⏱️  建議 APP 每分鐘自動上傳 MVC 數據")
-    print("\n啟動命令: uvicorn main:app --reload --host 0.0.0.0 --port 8000")
+    print("💡 系統特點: 整合 30 秒採樣疲勞累積模型 + Logistic/HGB 預測")
+    print("⏱️  建議 APP 每 30 秒或 1 分鐘自動上傳資料")
+    print("\n啟動命令: uvicorn fastapi_fatigue_service:app --reload --host 0.0.0.0 --port 8000")
