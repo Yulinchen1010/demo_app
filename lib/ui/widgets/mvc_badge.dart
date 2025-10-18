@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
 import 'info_sheets.dart';
 
-class MvcBadge extends StatelessWidget {
-  final double? percent; // 0-100
+class RmsBadge extends StatelessWidget {
+  final double? rms; // 0–1 或 0–100 皆可，視後端輸出
   final DateTime? updatedAt;
-  const MvcBadge({super.key, required this.percent, this.updatedAt});
+
+  const RmsBadge({super.key, required this.rms, this.updatedAt});
 
   @override
   Widget build(BuildContext context) {
-    final p = ((percent ?? 0) as num).clamp(0, 100).toDouble();
-    final bg = _bgColorFor(p);
-    final label = percent == null ? '\u808c\u529b %MVC\uff1a--' : '\u808c\u529b %MVC\uff1a${p.toStringAsFixed(1)}%';
+    final value = ((rms ?? 0) as num).clamp(0, 1.0).toDouble(); // 正規化到 0–1
+    final bg = _bgColorFor(value);
+    final label = rms == null
+        ? 'RMS：--'
+        : 'RMS：${(value * 100).toStringAsFixed(1)}%';
     final ts = updatedAt;
-    final when = ts == null ? '\u66f4\u65b0\u6642\u9593\uff1a--:--:--' : '\u66f4\u65b0\u6642\u9593\uff1a${_hhmmss(ts)}';
+    final when = ts == null
+        ? '更新時間：--:--:--'
+        : '更新時間：${_hhmmss(ts)}';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
-          onTap: () => showMvcInfo(context),
+          onTap: () => showRmsInfo(context),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             curve: Curves.easeOut,
@@ -46,10 +52,11 @@ class MvcBadge extends StatelessWidget {
     );
   }
 
-  Color _bgColorFor(double pct) {
-    if (pct <= 30) return const Color(0xFF43A047); // green
-    if (pct <= 60) return const Color(0xFFFFB300); // amber
-    return const Color(0xFFE53935); // red
+  // 可依 RMS 上升或疲勞等級調整顏色範圍
+  Color _bgColorFor(double rms) {
+    if (rms < 0.4) return const Color(0xFF43A047); // 綠：活化低
+    if (rms < 0.7) return const Color(0xFFFFB300); // 黃：中度活化
+    return const Color(0xFFE53935); // 紅：高活化 / 疲勞期
   }
 
   String _hhmmss(DateTime dt) {

@@ -61,16 +61,17 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection> {
     super.dispose();
   }
 
+  // ✅ 放在 class 內
   String _suggestionFor(RiskLevel level) {
     switch (level) {
       case RiskLevel.low:
-        return '\u4fdd\u6301\u653e\u9b06';
+        return '肌力穩定';
       case RiskLevel.medium:
-        return '\u6ce8\u610f\u59ff\u52e2';
+        return '出力下降，調整姿勢';
       case RiskLevel.high:
-        return '\u8acb\u77ed\u66ab\u4f11\u606f';
+        return '肌力明顯下降，建議休息';
       case RiskLevel.critical:
-        return '\u7acb\u5373\u505c\u6b62\u4f5c\u696d';
+        return '立即停止並休息';
     }
   }
 
@@ -91,7 +92,7 @@ class _FatigueBeaconSectionState extends State<FatigueBeaconSection> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: const [
                 Text(
-                  '\u75b2\u52de\u6307\u793a\u71c8',
+                  '疲勞指示燈',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -161,33 +162,32 @@ class _BeaconHelpSheet extends StatelessWidget {
           children: const [
             _HelpHeader(),
             SizedBox(height: 20),
+
+            // 依後端「未來 Δ%MVC 預測分類」對應顯示 —— 僅文案更新
             _RiskCard(
-              title: '\u4f4e\u98a8\u96aa',
-              desc:
-                  'RULA 1\u20132 \u6216 %MVC < 30%\n\u72c0\u614b\u7a69\u5b9a\uff0c\u808c\u8089\u8ca0\u8377\u4f4e',
+              title: '穩定',
+              desc: 'Δ%MVC < 5% / \n肌力穩定，無明顯疲勞',
               gradient: [Color(0xFF16A34A), TColors.levelLow],
             ),
             SizedBox(height: 12),
             _RiskCard(
-              title: '\u4e2d\u98a8\u96aa',
-              desc:
-                  'RULA 3\u20134 \u6216 %MVC 30\u201350%\n\u6ce8\u610f\u59ff\u52e2\u8207\u52d5\u4f5c\uff0c\u907f\u514d\u6301\u7e8c\u8ca0\u8377',
+              title: '輕微疲勞',
+              desc: 'Δ%MVC 5–10% / \n出力開始下降，建議調整姿勢',
               gradient: [Color(0xFFFACC15), TColors.levelMid],
             ),
             SizedBox(height: 12),
             _RiskCard(
-              title: '\u8f03\u9ad8\u98a8\u96aa',
-              desc:
-                  'RULA 5\u20136 \u6216 %MVC 50\u201370%\n\u5efa\u8b70\u8abf\u6574\u59ff\u52e2\uff0c\u9632\u6b62\u75b2\u52de\u7a4d\u7d2f',
+              title: '明顯疲勞',
+              desc: 'Δ%MVC 10–20% / \n肌力明顯下降，建議休息',
               gradient: [TColors.levelHighish, Color(0xFFEA580C)],
             ),
             SizedBox(height: 12),
             _RiskCard(
-              title: '\u9ad8\u98a8\u96aa',
-              desc:
-                  'RULA \u2265 7 \u6216 %MVC \u2265 70%\n\u75b2\u52de\u904e\u9ad8\uff0c\u8acb\u7acb\u5373\u4f11\u606f',
+              title: '嚴重疲勞',
+              desc: 'Δ%MVC > 20% / \n肌肉疲勞累積，請立即停止',
               gradient: [Color(0xFFDC2626), TColors.levelHigh],
             ),
+
             SizedBox(height: 16),
             _HelpFooter(),
             SizedBox(height: 20),
@@ -198,6 +198,7 @@ class _BeaconHelpSheet extends StatelessWidget {
     );
   }
 }
+
 
 class _HelpHeader extends StatelessWidget {
   const _HelpHeader();

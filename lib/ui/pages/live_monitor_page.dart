@@ -1,5 +1,5 @@
+// lib/ui/pages/live_monitor_page.dart
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,14 +8,16 @@ import '../../data/ble_connection_service.dart';
 import '../../data/bluetooth_streaming_service.dart';
 import '../../data/data_source.dart';
 import '../../data/models.dart';
-import '../../data/mvc.dart';
+// import '../../data/mvc.dart'; // ← 移除 MVC 依賴
 import '../../data/streaming_service.dart';
 import '../../data/telemetry_service.dart';
 import '../../domain/risk_level.dart';
 import '../../nav/bottom_nav_controller.dart';
-import '../widgets/demo_emg_stream.dart';
+import '../widgets/demo_emg_stream.dart' as demo;
 import '../widgets/fatigue_beacon.dart';
-import '../widgets/info_sheets.dart';
+import '../widgets/rula_info_dialog.dart';
+import '../widgets/rms_info_dialog.dart';
+// import '../widgets/info_sheets.dart'; // 需提供 showRmsInfoDialog / showRulaInfoDialog
 import '../widgets/realtime_emg_chart.dart';
 import 'fatigue_detail_page.dart';
 
@@ -27,18 +29,22 @@ class LiveMonitorPage extends StatefulWidget {
 }
 
 class _LiveMonitorPageState extends State<LiveMonitorPage> {
+  // ── Streams & services ────────────────────────────────────────────────────────
   Stream<EmgPoint>? _emg;
   StreamingService? _ws;
   BluetoothStreamingService? _bt;
+
+  // ── Subscriptions ────────────────────────────────────────────────────────────
   StreamSubscription<RulaScore>? _rulaSub;
-  StreamSubscription<MvcPoint>? _mvcSub;
+  // StreamSubscription<MvcPoint>? _mvcSub; // ← 不再使用
   StreamSubscription<EmgPoint>? _emgSub;
   StreamSubscription<StreamStatus>? _statusSub;
   StreamSubscription<DataSource>? _busSourceSub;
   StreamSubscription<void>? _busReconnectSub;
 
+  // ── UI state ─────────────────────────────────────────────────────────────────
   double? _rulaScore;
-  double? _mvcPercent;
+  double? _rmsValue;                  // ← 即時 RMS (μV)
   DateTime? _lastSampleAt;
   DataSource _source = DataSource.bluetooth;
 
@@ -53,6 +59,7 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
   void initState() {
     super.initState();
     _telemetry = Provider.of<TelemetryService>(context, listen: false);
+
     if (StreamingService.hasConfiguredUrl) {
       _source = DataSource.websocket;
       _useWebSocket();
@@ -60,6 +67,7 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
       _source = DataSource.bluetooth;
       _useBluetooth();
     }
+
     _busSourceSub = AppBus.instance.onSource.listen(_switchSource);
     _busReconnectSub = AppBus.instance.onReconnect.listen((_) => _reconnect());
   }
@@ -67,7 +75,6 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
   @override
   void dispose() {
     _rulaSub?.cancel();
-    _mvcSub?.cancel();
     _emgSub?.cancel();
     _statusSub?.cancel();
     _busSourceSub?.cancel();
@@ -80,22 +87,20 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
   @override
   Widget build(BuildContext context) {
     final double? rula = _rulaScore;
-    final double? mvc = _mvcPercent;
     final bool isConnected = context.watch<BleConnectionService>().isConnected;
     final bool hasData =
         context.select<TelemetryService, bool>((t) => t.hasFreshData);
+
     final Size size = MediaQuery.of(context).size;
     final double computedHeight = size.height * 0.28;
-    final double chartHeight = computedHeight < 200
-        ? 200
-        : (computedHeight > 320 ? 320 : computedHeight);
+    final double chartHeight =
+        computedHeight < 200 ? 200 : (computedHeight > 320 ? 320 : computedHeight);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F141A),
       body: SafeArea(
         child: ListView(
-          padding:
-              const EdgeInsets.only(left: 16, right: 16, top: 0, bottom: 4),
+          padding: const EdgeInsets.only(left: 16, right: 16, top: 0, bottom: 4),
           children: [
             FatigueBeaconSection(
               level: hasData ? _riskLevel : null,
@@ -105,7 +110,7 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
               ),
               onExplainTap: () => showFatigueBeaconHelp(context),
               rula: rula,
-              mvc: mvc,
+              mvc: null, // ← 不再用 MVC，傳 null
             ),
             const SizedBox(height: 12),
             Row(
@@ -117,17 +122,17 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
                     title: 'RULA',
                     value: _formatRula(rula),
                     subtitle: _formatTimestamp(_lastSampleAt),
-                    onInfo: () => showRulaInfo(context),
+                    onInfo: () => showRulaInfoDialog(context), // ← 名稱統一 Dialog 版本
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _MetricInfoCard(
                     icon: Icons.monitor_heart,
-                    title: '%MVC',
-                    value: _formatMvc(mvc),
-                    subtitle: _formatTimestamp(_mvcPoint?.ts),
-                    onInfo: () => showMvcInfo(context),
+                    title: 'RMS',
+                    value: _formatRms(_rmsValue),                // ← 顯示 RMS
+                    subtitle: _formatTimestamp(_lastSampleAt),    // ← 最後一筆 EMG 時間
+                    onInfo: () => showRmsInfoDialog(context),     // ← RMS 說明
                   ),
                 ),
               ],
@@ -153,8 +158,7 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
     );
   }
 
-  MvcPoint? _mvcPoint;
-
+  // ── Handlers ─────────────────────────────────────────────────────────────────
   void _handleRula(RulaScore score) {
     final DateTime now = DateTime.now();
     setState(() {
@@ -164,54 +168,46 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
     });
   }
 
-  void _handleMvc(MvcPoint point) {
-    final DateTime now = DateTime.now();
-    setState(() {
-      _mvcPoint = point;
-      _mvcPercent = point.percent;
-      _lastSampleAt = now;
-      _updateRisk(now);
-    });
-  }
-
   void _updateRisk(DateTime timestamp) {
     final double rulaValue = _rulaScore ?? double.nan;
-    final double mvcValue = _mvcPercent ?? double.nan;
-    final bool meetsCritical = (!rulaValue.isNaN && rulaValue >= 7) ||
-        (!mvcValue.isNaN && mvcValue >= 70);
+
+    final bool meetsCritical = (!rulaValue.isNaN && rulaValue >= 7);
+
     if (meetsCritical) {
       _criticalStart ??= timestamp;
     } else {
       _criticalStart = null;
     }
-    _overThreshold = _criticalStart == null
-        ? Duration.zero
-        : timestamp.difference(_criticalStart!);
+
+    _overThreshold =
+        _criticalStart == null ? Duration.zero : timestamp.difference(_criticalStart!);
+
     _riskLevel = computeRisk(
       rula: rulaValue,
-      mvc: mvcValue,
+      mvc: double.nan,         // ← 先不使用 MVC
       hold: _criticalHold,
       nowOverHold: _overThreshold,
     );
   }
 
+  // ── Source switching ─────────────────────────────────────────────────────────
   Future<void> _switchSource(DataSource next) async {
     setState(() {
       _source = next;
       _criticalStart = null;
       _overThreshold = Duration.zero;
       _rulaScore = null;
-      _mvcPercent = null;
-      _mvcPoint = null;
+      _rmsValue = null;
       _lastSampleAt = null;
       _riskLevel = RiskLevel.low;
     });
+
     await _ws?.dispose();
     await _bt?.stop();
+
     _emgSub?.cancel();
     _emgSub = null;
     _rulaSub?.cancel();
-    _mvcSub?.cancel();
     _statusSub?.cancel();
 
     switch (next) {
@@ -227,74 +223,83 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
     }
   }
 
+  // ── WebSocket source ─────────────────────────────────────────────────────────
   void _useWebSocket() {
     _ws = StreamingService();
-    _emg = _ws!.emg;
+    _emg = _ws!.emg; // Stream<EmgPoint>
+
     _emgSub?.cancel();
     _emgSub = _ws!.emg.listen((point) {
       _telemetry.onSampleArrived();
+      _rmsValue = point.value;            // ← 取 RMS
       if (mounted) {
-        setState(() {
-          _lastSampleAt = point.ts;
-        });
+        setState(() => _lastSampleAt = point.ts);
       } else {
         _lastSampleAt = point.ts;
       }
     });
-    _rulaSub = _ws!.rula.listen(_handleRula);
-    _mvcSub = _ws!.mvc.listen(_handleMvc);
+
+    _rulaSub = _ws!.rula.listen(_handleRula); // Stream<RulaScore>
     _statusSub = _ws!.status.listen((_) {});
+
     _ws!.start();
   }
 
+  // ── Bluetooth source ─────────────────────────────────────────────────────────
   void _useBluetooth() {
     final String? name = AppBus.instance.selectedBtName;
     _bt = BluetoothStreamingService(
-        deviceName: (name == null || name.isEmpty) ? 'ESP32_EMG_IMU' : name);
+      deviceName: (name == null || name.isEmpty) ? 'ESP32_EMG_IMU' : name,
+    );
+
+    _statusSub = _bt!.status.listen(
+      (st) => AppBus.instance.setBtStatus(st, deviceName: _bt?.deviceName),
+    );
+
+    _rulaSub = _bt!.rula.listen(_handleRula);
+
     _emg = _bt!.emg;
     _emgSub?.cancel();
     _emgSub = _bt!.emg.listen((point) {
       _telemetry.onSampleArrived();
+      _rmsValue = point.value;            // ← 取 RMS
       if (mounted) {
-        setState(() {
-          _lastSampleAt = point.ts;
-        });
+        setState(() => _lastSampleAt = point.ts);
       } else {
         _lastSampleAt = point.ts;
       }
     });
-    _statusSub = _bt!.status.listen(
-      (st) => AppBus.instance.setBtStatus(st, deviceName: _bt?.deviceName),
-    );
-    _rulaSub = _bt!.rula.listen(_handleRula);
-    _mvcSub = _bt!.mvc.listen(_handleMvc);
+
     _bt!.start();
   }
 
+  // ── Demo source ──────────────────────────────────────────────────────────────
   void _useDemo() {
+    final Stream<EmgPoint> emgStream = demo.demoEmgStream();
+
     setState(() {
-      _emg = demoEmgStream();
+      _emg = emgStream;
       _rulaScore = null;
-      _mvcPercent = null;
-      _mvcPoint = null;
+      _rmsValue = null;
       _criticalStart = null;
       _overThreshold = Duration.zero;
       _lastSampleAt = null;
       _riskLevel = RiskLevel.low;
     });
+
     _emgSub?.cancel();
-    _emgSub = _emg!.listen((point) {
+    _emgSub = emgStream.listen((point) {
       _telemetry.onSampleArrived();
+      _rmsValue = point.value;            // ← 取 RMS
       if (mounted) {
-        setState(() {
-          _lastSampleAt = point.ts;
-        });
+        setState(() => _lastSampleAt = point.ts);
       } else {
         _lastSampleAt = point.ts;
       }
     });
   }
 
+  // ── Reconnect ────────────────────────────────────────────────────────────────
   Future<void> _reconnect() async {
     switch (_source) {
       case DataSource.websocket:
@@ -311,33 +316,29 @@ class _LiveMonitorPageState extends State<LiveMonitorPage> {
     }
   }
 
+  // ── UI utils ─────────────────────────────────────────────────────────────────
   String _formatRula(double? value) {
     if (value == null || value.isNaN) return '--';
     return value.toStringAsFixed(1);
   }
 
-  String _formatMvc(double? value) {
+  String _formatRms(double? value) {
     if (value == null || value.isNaN) return '--';
-    return '${value.toStringAsFixed(0)}%';
+    return '${value.toStringAsFixed(2)} μV';
   }
 
   String _formatTimestamp(DateTime? ts) {
     if (ts == null) return '\u672a\u63a5\u6536\u8cc7\u6599';
     final Duration diff = DateTime.now().difference(ts);
     if (diff.inSeconds < 1) return '\u525b\u525b\u66f4\u65b0';
-    if (diff.inSeconds < 60) {
-      return '\u66f4\u65b0 ${diff.inSeconds}\u79d2\u524d';
-    }
-    if (diff.inMinutes < 60) {
-      return '\u66f4\u65b0 ${diff.inMinutes}\u5206\u524d';
-    }
+    if (diff.inSeconds < 60) return '\u66f4\u65b0 ${diff.inSeconds}\u79d2\u524d';
+    if (diff.inMinutes < 60) return '\u66f4\u65b0 ${diff.inMinutes}\u5206\u524d';
     return '\u66f4\u65b0 ${diff.inHours}\u5c0f\u6642\u524d';
   }
 }
 
 class _ChartCard extends StatelessWidget {
   const _ChartCard({required this.child});
-
   final Widget child;
 
   @override
@@ -349,10 +350,7 @@ class _ChartCard extends StatelessWidget {
           color: const Color(0xFF111A23),
           border: Border.all(color: Colors.white.withOpacity(0.06)),
           boxShadow: const [
-            BoxShadow(
-                color: Color(0x33111C2E),
-                blurRadius: 30,
-                offset: Offset(0, 24)),
+            BoxShadow(color: Color(0x33111C2E), blurRadius: 30, offset: Offset(0, 24)),
           ],
         ),
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -425,10 +423,7 @@ class _MetricInfoCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Colors.white.withOpacity(0.08)),
             boxShadow: const [
-              BoxShadow(
-                  color: Color(0x1A101822),
-                  blurRadius: 24,
-                  offset: Offset(0, 14)),
+              BoxShadow(color: Color(0x1A101822), blurRadius: 24, offset: Offset(0, 14)),
             ],
           ),
           child: Column(
@@ -451,11 +446,9 @@ class _MetricInfoCard extends StatelessWidget {
                   ),
                   IconButton(
                     onPressed: onInfo,
-                    icon: const Icon(Icons.info_outline,
-                        size: 20, color: Colors.white70),
+                    icon: const Icon(Icons.info_outline, size: 20, color: Colors.white70),
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 36, minHeight: 36),
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
                 ],
               ),

@@ -99,7 +99,7 @@ class RulaScoreBar extends StatelessWidget {
 
   Color _colorForScore(double s) {
 
-    if (s >= 7) return const Color(0xFFFF3B30);
+    if (s == 7) return const Color(0xFFFF3B30);
 
     if (s >= 5) return const Color(0xFFFF7043);
 

@@ -1,10 +1,13 @@
+// ============================== StreamingService =============================
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'models.dart';
+// RulaScore 統一用 models.dart 的版本
+import 'models.dart' as m;
 import 'mvc.dart';
-import 'rula.dart';
+import 'rula.dart' as ralgo;
 import 'cloud_api.dart';
 
 enum StreamStatus { idle, connecting, connected, reconnecting, error, closed }
@@ -12,7 +15,7 @@ enum StreamStatus { idle, connecting, connected, reconnecting, error, closed }
 class TelemetrySample {
   final DateTime ts;
   final double emgRms;
-  final RulaScore? rula;
+  final m.RulaScore? rula;
   TelemetrySample(this.ts, this.emgRms, this.rula);
 }
 
@@ -31,20 +34,23 @@ class StreamingService {
   int? _lastUploadedRulaScore;
 
   final _statusCtrl = StreamController<StreamStatus>.broadcast();
-  final _emgCtrl = StreamController<EmgPoint>.broadcast();
+  // ↓↓↓ EmgPoint 來自 models.dart，要加 m. 前綴
+  final _emgCtrl = StreamController<m.EmgPoint>.broadcast();
   final _mvcCtrl = StreamController<MvcPoint>.broadcast();
-  final _rulaCtrl = StreamController<RulaScore>.broadcast();
+  final _rulaCtrl = StreamController<m.RulaScore>.broadcast();
   final _sampleCtrl = StreamController<TelemetrySample>.broadcast();
 
   StreamingService({this.url});
 
   Stream<StreamStatus> get status => _statusCtrl.stream;
-  Stream<EmgPoint> get emg => _emgCtrl.stream;
+  // ↓↓↓ 回傳型別一併修正
+  Stream<m.EmgPoint> get emg => _emgCtrl.stream;
   Stream<MvcPoint> get mvc => _mvcCtrl.stream;
-  Stream<RulaScore> get rula => _rulaCtrl.stream;
+  Stream<m.RulaScore> get rula => _rulaCtrl.stream;
   Stream<TelemetrySample> get samples => _sampleCtrl.stream;
 
-  static const String kStreamUrl = String.fromEnvironment('STREAM_URL', defaultValue: '');
+  static const String kStreamUrl =
+      String.fromEnvironment('STREAM_URL', defaultValue: '');
   static bool get hasConfiguredUrl => kStreamUrl.isNotEmpty;
 
   Future<void> start() async {
@@ -62,8 +68,9 @@ class StreamingService {
       _ws = await WebSocket.connect(target);
       _statusCtrl.add(StreamStatus.connected);
       _backoff = _initialBackoff;
-      // Configure ping on the socket after connect (Dart IO)
-      try { _ws!.pingInterval = _pingInterval; } catch (_) {}
+      try {
+        _ws!.pingInterval = _pingInterval;
+      } catch (_) {}
       _wsSub = _ws!.listen(
         _handleMessage,
         onDone: _scheduleReconnect,
@@ -91,7 +98,6 @@ class StreamingService {
       if (target.isEmpty) return;
       _connect(target);
     });
-    // exponential backoff with cap
     _backoff = _backoff * 2;
     if (_backoff > _maxBackoff) _backoff = _maxBackoff;
   }
@@ -101,22 +107,33 @@ class StreamingService {
       final obj = data is String ? jsonDecode(data) : data;
       if (obj is! Map) return;
       final map = obj.map((k, v) => MapEntry(k.toString(), v));
-      final tsMs = _asInt(map['ts_ms']) ?? _asInt(map['timestamp']) ?? DateTime.now().millisecondsSinceEpoch;
+
+      final tsMs = _asInt(map['ts_ms']) ??
+          _asInt(map['timestamp']) ??
+          DateTime.now().millisecondsSinceEpoch;
       final ts = DateTime.fromMillisecondsSinceEpoch(tsMs);
-      final emg = (map['emg_rms'] is num) ? (map['emg_rms'] as num).toDouble() : _asNum(map['emg'])?.toDouble() ?? 0.0;
-      final mvcPct = _asNum(map['percent_mvc'])?.toDouble() ?? _asNum(map['emg_pct'])?.toDouble();
-      RulaScore? rula;
+
+      final emg = (map['emg_rms'] is num)
+          ? (map['emg_rms'] as num).toDouble()
+          : _asNum(map['emg'])?.toDouble() ?? 0.0;
+
+      final mvcPct = _asNum(map['percent_mvc'])?.toDouble() ??
+          _asNum(map['emg_pct'])?.toDouble();
+
+      m.RulaScore? rulaScore;
+
+      // 1) 直接吃伺服器已算好的 rula
       final r = map['rula'];
       if (r is Map) {
         final score = _asInt(r['score']);
         final label = r['risk_label']?.toString();
-        if (score != null) rula = RulaScore(score, riskLabel: label);
+        if (score != null) {
+          rulaScore = m.RulaScore(score, riskLabel: label);
+        }
       }
-      // If server didn't provide rula but provided angles, compute locally
-      if (rula == null) {
-        // Supported shapes:
-        // 1) angles: { left_shoulder: x, right_shoulder: y, trunk: z }
-        // 2) top-level: left_shoulder/right_shoulder/trunk
+
+      // 2) 沒給 rula 就本地計算（angles）
+      if (rulaScore == null) {
         Map<String, dynamic> angles;
         final a = map['angles'];
         if (a is Map) {
@@ -128,50 +145,48 @@ class StreamingService {
         final rs = _asNum(angles['right_shoulder'])?.toDouble();
         final tk = _asNum(angles['trunk'])?.toDouble();
         if (ls != null || rs != null || tk != null) {
-          final computed = RulaCalculator.fromAngles(
+          // 注意：這裡用 ralgo，避免被 class 的 getter rula 遮蔽
+          final raw = ralgo.RulaCalculator.fromAngles(
             leftShoulderDeg: ls,
             rightShoulderDeg: rs,
             trunkDeg: tk,
           );
-          rula = computed;
+          // 轉成 models 版 RulaScore
+          final computed = m.RulaScore(raw.score, riskLabel: raw.riskLabel);
+          rulaScore = computed;
           _maybeUploadRula(computed);
         }
       }
 
-      final point = EmgPoint(ts, emg);
+      // 發佈資料（m.EmgPoint）
+      final point = m.EmgPoint(ts, emg);
       _emgCtrl.add(point);
+
       if (mvcPct != null) {
         _mvcCtrl.add(MvcPoint(ts, mvcPct.clamp(0, 100).toDouble()));
       }
-      if (rula != null) _rulaCtrl.add(rula);
-      _sampleCtrl.add(TelemetrySample(ts, emg, rula));
+      if (rulaScore != null) _rulaCtrl.add(rulaScore);
+
+      _sampleCtrl.add(TelemetrySample(ts, emg, rulaScore));
     } catch (_) {
       // ignore malformed frames
     }
   }
 
-  Future<void> _maybeUploadRula(RulaScore s) async {
+  Future<void> _maybeUploadRula(m.RulaScore s) async {
     try {
       if (CloudApi.baseUrl.isEmpty || CloudApi.workerId.isEmpty) return;
       final now = DateTime.now();
       final lastScore = _lastUploadedRulaScore;
       final shouldByScore = lastScore == null || lastScore != s.score;
-      final shouldByTime = _lastRulaUploadAt == null || now.difference(_lastRulaUploadAt!).inSeconds >= 30;
+      final shouldByTime =
+          _lastRulaUploadAt == null || now.difference(_lastRulaUploadAt!).inSeconds >= 30;
       if (!shouldByScore && !shouldByTime) return;
       _lastUploadedRulaScore = s.score;
       _lastRulaUploadAt = now;
-      // 暫時不上傳 RULA 分數，因為新的 API 不支援
-      // TODO: 如果需要，可以考慮將 RULA 分數作為額外參數傳給 process API
-      /*await CloudApi.process(
-        workerId: CloudApi.workerId,
-        percentMvc: 0, // 僅用於表示狀態更新
-        timestamp: now,
-        rulaScore: s.score,
-        rulaRiskLabel: s.riskLabel,
-      );*/
-    } catch (_) {
-      // ignore upload errors
-    }
+      // 需要時可改成 uploadJson 上傳
+      // await CloudApi.uploadJson([...]);
+    } catch (_) {}
   }
 
   int? _asInt(dynamic v) {

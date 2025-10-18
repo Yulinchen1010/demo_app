@@ -1,3 +1,4 @@
+// lib/ui/pages/connect_page.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -8,15 +9,10 @@ import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart'
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../data/cloud_api.dart';
-
 import '../../data/cloud_subscriber.dart';
-
 import '../../data/app_bus.dart';
-
 import '../../data/data_source.dart';
-
 import '../../system/status_aggregator.dart';
-
 import '../../data/streaming_service.dart';
 
 import '../../design/tokens.dart';
@@ -30,7 +26,6 @@ class ConnectPage extends StatefulWidget {
   @override
   State<ConnectPage> createState() => _ConnectPageState();
 }
-
 
 class _ConnectPageState extends State<ConnectPage> {
   final _cloudSub = CloudStatusSubscriber();
@@ -69,6 +64,7 @@ class _ConnectPageState extends State<ConnectPage> {
       final now = DateTime.now();
 
       switch (e.op) {
+        // 這兩個照舊：專屬健康/狀態
         case 'health':
         case 'status':
           _agg.set(
@@ -77,17 +73,22 @@ class _ConnectPageState extends State<ConnectPage> {
             lastCloudPingOk: e.ok ? now : null,
             lastCloudPingFail: e.ok ? null : now,
           );
-
           break;
 
+        // 任何「打到雲端」的事件，都同時刷新上傳狀態 + 視為雲端 ping
         case 'upload':
         case 'upload_rula':
         case 'upload_batch':
+        case 'upload_json':
+        case 'process':
           _agg.set(
-            lastUploadOkAt: e.ok ? now : null,
-            lastUploadErrorAt: e.ok ? null : now,
+            // 上傳結果
+            lastUploadOkAt: e.ok ? now : _agg.lastUploadOkAt,
+            lastUploadErrorAt: e.ok ? _agg.lastUploadErrorAt : now,
+            // 雲端活躍/錯誤窗口也一起刷新
+            lastCloudPingOk: e.ok ? now : _agg.lastCloudPingOk,
+            lastCloudPingFail: e.ok ? _agg.lastCloudPingFail : now,
           );
-
           break;
 
         default:
@@ -105,13 +106,9 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void dispose() {
     _tick?.cancel();
-
     _btSub?.cancel();
-
     _cloudEventsSub?.cancel();
-
     _cloudSub.dispose();
-
     super.dispose();
   }
 
@@ -124,7 +121,6 @@ class _ConnectPageState extends State<ConnectPage> {
       case IndicatorColor.red:
         return HealthLevel.error;
       case IndicatorColor.grey:
-      default:
         return HealthLevel.warning;
     }
   }
@@ -148,19 +144,34 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
+  // 放寬時間窗：綠燈 15s -> 60s
   bool get _cloudActive =>
       _agg.cloudConfigured &&
-      _agg.within(_agg.lastCloudPingOk, const Duration(seconds: 15));
+      _agg.within(_agg.lastCloudPingOk, const Duration(seconds: 60));
 
+  // 放寬時間窗：錯誤 10s -> 20s
   bool get _cloudError =>
       _agg.cloudConfigured &&
-      _agg.within(_agg.lastCloudPingFail, const Duration(seconds: 10));
+      _agg.within(_agg.lastCloudPingFail, const Duration(seconds: 20));
 
-  bool get _uploadRecently =>
-      _agg.within(_agg.lastPacketAt, const Duration(seconds: 4));
+  // ⬇️ 放寬判斷：4s 內有封包 或 10s 內有成功上傳 都算「上傳中/已送出」
+  bool get _uploadRecently {
+    final hasFreshPacket =
+        _agg.within(_agg.lastPacketAt, const Duration(seconds: 4));
+    final sentRecently =
+        _agg.within(_agg.lastUploadOkAt, const Duration(seconds: 10));
+    return hasFreshPacket || sentRecently;
+  }
 
-  bool get _uploadFailedRecently =>
-      _agg.within(_agg.lastUploadErrorAt, const Duration(seconds: 6));
+  // 只在「錯誤比成功新」且在 6s 內時才判定為失敗
+  bool get _uploadFailedRecently {
+    final fail = _agg.lastUploadErrorAt;
+    final ok = _agg.lastUploadOkAt;
+    final failIsRecent = _agg.within(fail, const Duration(seconds: 6));
+    if (!failIsRecent) return false;
+    if (ok == null) return true;
+    return fail!.isAfter(ok);
+  }
 
   String get _cloudStatusLabel {
     if (!_agg.cloudConfigured) return '\u672a\u8a2d\u5b9a';
@@ -226,9 +237,9 @@ class _ConnectPageState extends State<ConnectPage> {
 
   Future<void> _openCloudDialog() async {
     final urlCtrl = TextEditingController(text: CloudApi.baseUrl);
-
     final workerCtrl = TextEditingController(
-        text: CloudApi.workerId.isEmpty ? 'worker_1' : CloudApi.workerId);
+      text: CloudApi.workerId.isEmpty ? 'worker_1' : CloudApi.workerId,
+    );
 
     bool busy = false;
 
@@ -272,7 +283,6 @@ class _ConnectPageState extends State<ConnectPage> {
                     ? null
                     : () {
                         CloudApi.setBaseUrl(urlCtrl.text.trim());
-
                         CloudApi.setWorkerId(workerCtrl.text.trim());
 
                         _agg.set(
@@ -288,9 +298,7 @@ class _ConnectPageState extends State<ConnectPage> {
 
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text('\u5df2\u5132\u5b58\u8a2d\u5b9a')),
+                            const SnackBar(content: Text('\u5df2\u5132\u5b58\u8a2d\u5b9a')),
                           );
                         }
                       },
@@ -301,13 +309,13 @@ class _ConnectPageState extends State<ConnectPage> {
                     ? null
                     : () async {
                         setState(() => busy = true);
-
                         try {
-                          if (urlCtrl.text.trim().isNotEmpty)
+                          if (urlCtrl.text.trim().isNotEmpty) {
                             CloudApi.setBaseUrl(urlCtrl.text.trim());
-
-                          if (workerCtrl.text.trim().isNotEmpty)
+                          }
+                          if (workerCtrl.text.trim().isNotEmpty) {
                             CloudApi.setWorkerId(workerCtrl.text.trim());
+                          }
 
                           _agg.set(
                             cloudConfigured: CloudApi.baseUrl.isNotEmpty &&
@@ -320,17 +328,13 @@ class _ConnectPageState extends State<ConnectPage> {
 
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text(
-                                      '\u5065\u5eb7\u6aa2\u67e5\u6210\u529f')),
+                              const SnackBar(content: Text('\u5065\u5eb7\u6aa2\u67e5\u6210\u529f')),
                             );
                           }
                         } catch (e) {
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text(
-                                      '\u5065\u5eb7\u6aa2\u67e5\u5931\u6557: $e')),
+                              SnackBar(content: Text('\u5065\u5eb7\u6aa2\u67e5\u5931\u6557: $e')),
                             );
                           }
                         } finally {
@@ -401,14 +405,10 @@ class _ConnectPageState extends State<ConnectPage> {
               (r) => setState(() => found[r.device.address] = r),
               onError: (err, __) {
                 errorText = err.toString();
-
                 setState(() {});
-
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content:
-                            Text('\u85cd\u7259\u6383\u63cf\u5931\u6557: $err')),
+                    SnackBar(content: Text('\u85cd\u7259\u6383\u63cf\u5931\u6557: $err')),
                   );
                 }
               },
@@ -447,45 +447,37 @@ class _ConnectPageState extends State<ConnectPage> {
                       child: ListView(children: [
                         if (bonded.isNotEmpty)
                           Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Text('\u5df2\u914d\u5c0d',
-                                  style:
-                                      Theme.of(context).textTheme.labelLarge)),
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text('\u5df2\u914d\u5c0d',
+                                style: Theme.of(context).textTheme.labelLarge),
+                          ),
                         ...bonded.map((d) => ListTile(
                               leading: const Icon(Icons.devices_other),
                               title: Text(d.name ?? d.address),
                               subtitle: Text(d.address),
                               onTap: () {
                                 AppBus.instance.setBtName(d.name ?? d.address);
-
                                 _agg.set(btConnecting: true, btScanning: false);
-
                                 AppBus.instance.setSource(DataSource.bluetooth);
-
                                 AppBus.instance.reconnect();
-
                                 Navigator.of(ctx).pop();
                               },
                             )),
                         if (discovered.isNotEmpty)
                           Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Text('\u9644\u8fd1\u88dd\u7f6e',
-                                  style:
-                                      Theme.of(context).textTheme.labelLarge)),
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text('\u9644\u8fd1\u88dd\u7f6e',
+                                style: Theme.of(context).textTheme.labelLarge),
+                          ),
                         ...discovered.map((d) => ListTile(
                               leading: const Icon(Icons.bluetooth_searching),
                               title: Text(d.name ?? d.address),
                               subtitle: Text(d.address),
                               onTap: () {
                                 AppBus.instance.setBtName(d.name ?? d.address);
-
                                 _agg.set(btConnecting: true, btScanning: false);
-
                                 AppBus.instance.setSource(DataSource.bluetooth);
-
                                 AppBus.instance.reconnect();
-
                                 Navigator.of(ctx).pop();
                               },
                             )),
@@ -493,10 +485,12 @@ class _ConnectPageState extends State<ConnectPage> {
                     ),
                     const SizedBox(height: 8),
                     Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            child: const Text('\u95dc\u9589'))),
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('\u95dc\u9589'),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -768,8 +762,7 @@ class _SummaryEntry extends StatelessWidget {
               label,
               style: const TextStyle(
                 fontSize: 13,
-                color: Color(0xFFAAB2BD),
-              ),
+                color: Color(0xFFAAB2BD)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -780,8 +773,7 @@ class _SummaryEntry extends StatelessWidget {
               value,
               style: const TextStyle(
                 fontSize: 13,
-                color: Color(0xFFAAB2BD),
-              ),
+                color: Color(0xFFAAB2BD)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
